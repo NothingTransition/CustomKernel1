@@ -1,10 +1,4 @@
 config FINGERPRINT_GF3208
-	tristate "Finger print card goodix"
-	depends on INPUT_FINGERPRINT
-	help
-	  Say Y here to enable support for retrieving self-test reports.
-
-	  If unsure, say N.
-
-	  To compile this driver as a module, choose M here.
-
+    tristate "goodix fingerprint gf3208"
+    help 
+        say y enable  gf3208 goodix
