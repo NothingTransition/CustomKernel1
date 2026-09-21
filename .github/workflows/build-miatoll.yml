@@ -41,9 +41,9 @@ concurrency:
 env:
   ARCH: arm64
   DEFCONFIG: vendor/xiaomi/miatoll_defconfig
-  CLANG_COMMIT: 40fb9b651e8e6a4429e7de7a93467fa27dc9e6b2
-  GCC64_COMMIT: 5e030eafe024784a73cdf47e6936ac0dbfc763dc
-  GCC32_COMMIT: 111258a10e017f067b27e6cfcea7619d753f3309
+  TOOLCHAIN_RELEASE: "06092026"
+  TOOLCHAIN_ARCHIVE: neutron-clang-06092026.tar.zst
+  TOOLCHAIN_SHA256: 531083928c8e37f6b31e324dbfd0b5a8323f989b1c57ff2c1368b889b5b1bd30
 
 jobs:
   build:
@@ -60,7 +60,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             bc bison build-essential ccache flex git kmod libelf-dev \
-            libssl-dev python3 rsync zip
+            libssl-dev python3 rsync zstd zip
 
       - name: Restore compiler cache
         uses: actions/cache@v4
@@ -70,46 +70,52 @@ jobs:
           restore-keys: |
             miatoll-ccache-${{ runner.os }}-
 
-      - name: Fetch pinned Android toolchains
+      - name: Fetch pinned Neutron Clang/LLVM toolchain
         shell: bash
         run: |
           set -euo pipefail
 
-          fetch_toolchain() {
-            local directory="$1"
-            local repository="$2"
-            local commit="$3"
+          url="https://github.com/Neutron-Toolchains/clang-build-catalogue/releases/download/${TOOLCHAIN_RELEASE}/${TOOLCHAIN_ARCHIVE}"
+          curl --fail --location --retry 3 --output "$TOOLCHAIN_ARCHIVE" "$url"
+          echo "$TOOLCHAIN_SHA256  $TOOLCHAIN_ARCHIVE" | sha256sum --check --strict
 
-            git init -q "$directory"
-            git -C "$directory" remote add origin "$repository"
-            git -C "$directory" fetch --depth=1 origin "$commit"
-            git -C "$directory" checkout -q --detach FETCH_HEAD
-            test "$(git -C "$directory" rev-parse HEAD)" = "$commit"
-          }
+          mkdir clang
+          tar --use-compress-program=unzstd -xf "$TOOLCHAIN_ARCHIVE" -C clang
+          rm "$TOOLCHAIN_ARCHIVE"
 
-          fetch_toolchain clang \
-            https://github.com/crdroidandroid/android_prebuilts_clang_host_linux-x86_clang-6443078.git \
-            "$CLANG_COMMIT"
-          fetch_toolchain gcc64 \
-            https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9.git \
-            "$GCC64_COMMIT"
-          fetch_toolchain gcc32 \
-            https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9.git \
-            "$GCC32_COMMIT"
+          clang_path="$(find "$PWD/clang" -path '*/bin/clang' -perm -u+x -print -quit)"
+          test -n "$clang_path"
+          toolchain_bin="$(dirname "$clang_path")"
+          echo "TOOLCHAIN_BIN=$toolchain_bin" >> "$GITHUB_ENV"
+          echo "$toolchain_bin" >> "$GITHUB_PATH"
 
-          clang/bin/clang --version | head -n 2
+      - name: Verify LLVM toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo "Neutron release: $TOOLCHAIN_RELEASE"
+            clang --version
+            ld.lld --version
+            llvm-ar --version
+            llvm-nm --version
+            llvm-objcopy --version
+          } | tee toolchain-info.txt
+
+          for tool in clang clang++ ld.lld llvm-ar llvm-nm llvm-objcopy llvm-objdump llvm-readelf llvm-strip; do
+            resolved="$(command -v "$tool")"
+            case "$resolved" in
+              "$TOOLCHAIN_BIN"/*) ;;
+              *) echo "$tool resolved outside the pinned toolchain: $resolved" >&2; exit 1 ;;
+            esac
+          done
 
       - name: Generate and verify Miatoll configuration
         shell: bash
         run: |
           set -euo pipefail
-          export PATH="$PWD/clang/bin:$PWD/gcc64/bin:$PWD/gcc32/bin:$PATH"
-
-          make O=out ARCH=arm64 CC=clang \
-            CLANG_TRIPLE=aarch64-linux-gnu- \
-            CROSS_COMPILE="$PWD/gcc64/bin/aarch64-linux-android-" \
-            CROSS_COMPILE_ARM32="$PWD/gcc32/bin/arm-linux-androideabi-" \
-            LD=ld.lld "$DEFCONFIG"
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- "$DEFCONFIG"
 
           require_config() {
             grep -qx "$1" out/.config || {
@@ -141,7 +147,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          export PATH="$PWD/clang/bin:$PWD/gcc64/bin:$PWD/gcc32/bin:$PATH"
           export USE_CCACHE=1
           export CCACHE_DIR="$HOME/.cache/ccache"
           export KBUILD_BUILD_USER=github-actions
@@ -149,11 +154,9 @@ jobs:
           ccache --max-size=5G
 
           set +e
-          make -j"$(nproc)" O=out ARCH=arm64 CC='ccache clang' \
-            CLANG_TRIPLE=aarch64-linux-gnu- \
-            CROSS_COMPILE="$PWD/gcc64/bin/aarch64-linux-android-" \
-            CROSS_COMPILE_ARM32="$PWD/gcc32/bin/arm-linux-androideabi-" \
-            LD=ld.lld >build.log 2>&1
+          make -j"$(nproc)" O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            CC='ccache clang' CROSS_COMPILE=aarch64-linux-gnu- \
+            >build.log 2>&1
           build_status=$?
           set -e
 
@@ -188,12 +191,12 @@ jobs:
           test -s out/arch/arm64/boot/dts/qcom/curtana-atoll-ab-idp-overlay.dtbo
           test -s out/drivers/kernelsu/ksu.o
 
-          NM="$PWD/gcc64/bin/aarch64-linux-android-nm"
-          "$NM" out/vmlinux | grep -q ' ksu_handle_execveat$'
-          "$NM" out/vmlinux | grep -q ' ksu_handle_sys_reboot$'
-          "$NM" out/vmlinux | grep -q ' kernelsu_init$'
+          llvm-nm out/vmlinux | grep -q ' ksu_handle_execveat$'
+          llvm-nm out/vmlinux | grep -q ' ksu_handle_sys_reboot$'
+          llvm-nm out/vmlinux | grep -q ' kernelsu_init$'
 
-          make -s O=out ARCH=arm64 kernelrelease | tee kernel.release
+          make -s O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- kernelrelease | tee kernel.release
           sha256sum \
             out/arch/arm64/boot/Image.gz \
             out/arch/arm64/boot/dtb.img \
@@ -202,6 +205,9 @@ jobs:
           {
             echo "commit=${GITHUB_SHA}"
             echo "kernel.release=$(cat kernel.release)"
+            echo "toolchain.release=$TOOLCHAIN_RELEASE"
+            clang --version | head -n 1 | sed 's/^/clang.version=/'
+            ld.lld --version | head -n 1 | sed 's/^/lld.version=/'
             grep -E '^(CONFIG_KSU|CONFIG_EROFS_FS|CONFIG_NTFS_FS|CONFIG_BPF_SYSCALL|CONFIG_MODULE_SIG_FORCE)' out/.config || true
           } | tee build-info.txt
 
@@ -224,7 +230,7 @@ jobs:
           )
 
           find out -type f -name '*.ko' -exec cp --parents '{}' artifacts/modules/ \;
-          cp kernel.release SHA256SUMS build-info.txt artifacts/
+          cp kernel.release SHA256SUMS build-info.txt toolchain-info.txt artifacts/
           cp out/arch/arm64/boot/{Image.gz,dtb.img,dtbo.img} artifacts/
           sha256sum artifacts/CustomKernel1-*.zip >> artifacts/SHA256SUMS
 
