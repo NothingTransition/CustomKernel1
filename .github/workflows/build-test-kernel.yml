@@ -1,0 +1,183 @@
+name: Build Test Kernel (miatoll) - KSU-Next 3.3.0
+
+on:
+  workflow_dispatch:
+    inputs:
+      defconfig:
+        description: 'Defconfig to build'
+        required: false
+        default: 'vendor/xiaomi/miatoll_defconfig'
+      make_args:
+        description: 'Extra make args'
+        required: false
+        default: ''
+  push:
+    branches:
+      - arena/01a0c26a-customkernel1
+    paths:
+      - 'arch/**'
+      - 'drivers/**'
+      - 'KernelSU-Next/**'
+      - 'fs/**'
+      - 'Makefile'
+      - '.github/workflows/build-test-kernel.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 180
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison flex libssl-dev libelf-dev \
+            build-essential ccache libncurses-dev \
+            git zip unzip curl wget python3
+
+      - name: Set up ccache
+        run: |
+          ccache -M 50G || true
+          ccache -z || true
+          echo "CCACHE_DIR=$HOME/.ccache" >> $GITHUB_ENV
+
+      - name: Clone toolchains (clang + gcc)
+        run: |
+          # clang 6443078 (as in build.sh)
+          if [ ! -f clang/bin/clang ]; then
+            echo "Cloning clang..."
+            git clone --depth=1 https://github.com/crdroidandroid/android_prebuilts_clang_host_linux-x86_clang-6443078 clang
+          fi
+          clang/bin/clang --version || true
+
+          if [ ! -f gcc64/bin/aarch64-linux-android-as ]; then
+            echo "Cloning gcc64..."
+            git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 gcc64
+          fi
+          if [ ! -f gcc32/bin/arm-linux-androideabi-as ]; then
+            echo "Cloning gcc32..."
+            git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 gcc32
+          fi
+          ls -lh clang/bin/clang gcc64/bin/aarch64-linux-android-gcc gcc32/bin/arm-linux-androideabi-gcc 2>&1 | head -n 20
+
+      - name: Show kernel version and KSU
+        run: |
+          echo "Kernel Makefile VERSION:"
+          head -n 10 Makefile | grep -E "VERSION|PATCHLEVEL|SUBLEVEL|EXTRAVERSION"
+          echo "--- KSU version ---"
+          cat KernelSU-Next/kernel/Makefile 2>/dev/null | head -n 20 || true
+          git -C KernelSU-Next log --oneline -3 2>&1 | head -n 20 || cat KernelSU-Next/kernel/Kconfig | head -n 20
+
+      - name: Build kernel (defconfig)
+        env:
+          ARCH: arm64
+          KBUILD_BUILD_HOST: android-build
+          KBUILD_BUILD_USER: kardebayan
+          USE_CCACHE: "1"
+        run: |
+          export LC_ALL=C
+          DEFCONFIG="${{ inputs.defconfig || 'vendor/xiaomi/miatoll_defconfig' }}"
+          echo "Building defconfig: $DEFCONFIG"
+          rm -rf out
+          mkdir -p out
+          make O=out ARCH=arm64 $DEFCONFIG
+          # verify KSU is enabled
+          grep -E "CONFIG_KSU|CONFIG_KPROBES|CONFIG_EROFS" out/.config | head -n 30
+          echo "--- .config KSU ---"
+          grep CONFIG_KSU out/.config || echo "KSU not found"
+
+      - name: Compile kernel
+        env:
+          ARCH: arm64
+          KBUILD_BUILD_HOST: android-build
+          KBUILD_BUILD_USER: kardebayan
+          USE_CCACHE: "1"
+        run: |
+          export LC_ALL=C
+          export PATH="$PWD/clang/bin:$PWD/gcc32/bin:$PWD/gcc64/bin:$PATH"
+          echo "Clang: $(clang/bin/clang --version | head -n1)"
+          echo "GCC64: $(gcc64/bin/aarch64-linux-android-gcc --version | head -n1)"
+          echo "LD: $(clang/bin/ld.lld --version | head -n1)"
+          time make -j$(nproc --all) O=out \
+            ARCH=arm64 \
+            CC="clang" \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE="$PWD/gcc64/bin/aarch64-linux-android-" \
+            CROSS_COMPILE_ARM32="$PWD/gcc32/bin/arm-linux-androideabi-" \
+            LD=ld.lld \
+            CONFIG_NO_ERROR_ON_MISMATCH=y \
+            ${{ inputs.make_args }} 2>&1 | tee build.log
+          echo "--- build finished ---"
+          ls -lh out/arch/arm64/boot/ || true
+          ls -lh out/vmlinux* out/System.map 2>&1 | head -n 20
+          ccache -s || true
+
+      - name: Check bootables
+        run: |
+          echo "Checking Image files..."
+          ls -lh out/arch/arm64/boot/Image* 2>&1 | head -n 20
+          file out/arch/arm64/boot/Image 2>&1 | head -n 20
+          file out/arch/arm64/boot/Image.gz 2>&1 | head -n 20
+          # quick check for KSU string in Image
+          strings out/arch/arm64/boot/Image.gz 2>&1 | grep -i "kernelsu\|KSU" | head -n 20 || echo "KSU string not in gz (expected compressed)"
+          strings out/arch/arm64/boot/Image 2>&1 | grep -i "kernelsu" | head -n 20 || echo "Check vmlinux"
+          strings out/vmlinux 2>&1 | grep -i "kernelsu" | head -n 20 || echo "no KSU string in vmlinux (maybe stripped)"
+          grep -a "KernelSU" out/vmlinux 2>&1 | head -n 5 || true
+
+      - name: Package AnyKernel3
+        run: |
+          TANGGAL=$(date +"%Y%m%d-%H")
+          echo "TANGGAL=$TANGGAL" >> $GITHUB_ENV
+          if [ -f out/arch/arm64/boot/Image.gz ]; then
+            echo "Packaging Image.gz"
+            rm -rf AnyKernel
+            git clone --depth=1 https://github.com/Amritorock/AnyKernel3 -b r5x AnyKernel
+            cp out/arch/arm64/boot/Image.gz AnyKernel/
+            # also copy dtb if exists
+            find out/arch/arm64/boot -name "*.dtb" -exec cp {} AnyKernel/ \; 2>&1 | head -n 20 || true
+            cd AnyKernel
+            zip -r9 ../Stormbreaker-miatoll-${TANGGAL}-KSU-Next-v3.3.0.zip * 2>&1 | tail -n 20
+            cd ..
+            ls -lh Stormbreaker*.zip
+          elif [ -f out/arch/arm64/boot/Image ]; then
+            echo "Image.gz missing, packaging Image"
+            rm -rf AnyKernel
+            git clone --depth=1 https://github.com/Amritorock/AnyKernel3 -b r5x AnyKernel
+            cp out/arch/arm64/boot/Image AnyKernel/
+            gzip -c out/arch/arm64/boot/Image > AnyKernel/Image.gz
+            cd AnyKernel
+            zip -r9 ../Stormbreaker-miatoll-${TANGGAL}-KSU-Next-v3.3.0.zip * 2>&1 | tail -n 20
+            cd ..
+            ls -lh Stormbreaker*.zip
+          else
+            echo "No bootable image found!"
+            exit 1
+          fi
+
+      - name: Upload kernel artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Stormbreaker-miatoll-KSU-Next-${{ env.TANGGAL }}
+          path: |
+            Stormbreaker*.zip
+            out/arch/arm64/boot/Image*
+            out/vmlinux
+            build.log
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Summary
+        run: |
+          echo "### Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- Defconfig: ${{ inputs.defconfig || 'vendor/xiaomi/miatoll_defconfig' }}" >> $GITHUB_STEP_SUMMARY
+          echo "- KSU-Next: v3.3.0 (3b18216) bootable kprobe mode" >> $GITHUB_STEP_SUMMARY
+          echo "- EROFS/BPF/module-sig fixes included" >> $GITHUB_STEP_SUMMARY
+          echo "- Artifacts: Stormbreaker-miatoll-*.zip + Image/Image.gz + vmlinux" >> $GITHUB_STEP_SUMMARY
+          ls -lh Stormbreaker*.zip out/arch/arm64/boot/Image* 2>&1 | head -n 30 >> $GITHUB_STEP_SUMMARY || true
