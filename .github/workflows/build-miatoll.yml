@@ -148,11 +148,34 @@ jobs:
           export KBUILD_BUILD_HOST=kernel-ci
           ccache --max-size=5G
 
+          set +e
           make -j"$(nproc)" O=out ARCH=arm64 CC='ccache clang' \
             CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE="$PWD/gcc64/bin/aarch64-linux-android-" \
             CROSS_COMPILE_ARM32="$PWD/gcc32/bin/arm-linux-androideabi-" \
-            LD=ld.lld
+            LD=ld.lld >build.log 2>&1
+          build_status=$?
+          set -e
+
+          if [ "$build_status" -ne 0 ]; then
+            echo 'Kernel build failed. Relevant diagnostics:'
+            grep -Ei 'error:|undefined reference|No rule to make target|Error [0-9]+' build.log \
+              | tail -n 30 \
+              | sed 's/%/%25/g; s/\r/%0D/g; s/\n/%0A/g; s/^/::error::/' || true
+            tail -n 300 build.log
+            exit "$build_status"
+          fi
+
+          tail -n 100 build.log
+
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: miatoll-build-failure-${{ github.run_number }}
+          path: build.log
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Verify build products and KernelSU linkage
         shell: bash
