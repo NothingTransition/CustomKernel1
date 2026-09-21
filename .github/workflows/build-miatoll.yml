@@ -41,14 +41,13 @@ concurrency:
 env:
   ARCH: arm64
   DEFCONFIG: vendor/xiaomi/miatoll_defconfig
-  TOOLCHAIN_RELEASE: "06092026"
-  TOOLCHAIN_ARCHIVE: neutron-clang-06092026.tar.zst
-  TOOLCHAIN_SHA256: 531083928c8e37f6b31e324dbfd0b5a8323f989b1c57ff2c1368b889b5b1bd30
+  AOSP_CLANG_REVISION: clang-r614150
+  AOSP_CLANG_VERSION: 23.0.1
+  AOSP_CLANG_COMMIT: 52b3c04ccd487048aaaabd0b99fd42618012fb65
 
 jobs:
   build:
     name: Compile and verify
-    # Current Neutron snapshots require a recent glibc/libstdc++ runtime.
     runs-on: ubuntu-24.04
     timeout-minutes: 90
 
@@ -61,7 +60,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             bc bison build-essential ccache flex git kmod libelf-dev \
-            libssl-dev python3 rsync zstd zip
+            libssl-dev python3 rsync zip
 
       - name: Restore compiler cache
         uses: actions/cache@v4
@@ -71,28 +70,18 @@ jobs:
           restore-keys: |
             miatoll-ccache-${{ runner.os }}-
 
-      - name: Fetch pinned Neutron Clang/LLVM toolchain
+      - name: Fetch pinned AOSP Clang/LLVM toolchain
         shell: bash
         run: |
           set -euo pipefail
 
-          url="https://github.com/Neutron-Toolchains/clang-build-catalogue/releases/download/${TOOLCHAIN_RELEASE}/${TOOLCHAIN_ARCHIVE}"
-          curl --fail --location --retry 3 --output "$TOOLCHAIN_ARCHIVE" "$url"
-          echo "$TOOLCHAIN_SHA256  $TOOLCHAIN_ARCHIVE" | sha256sum --check --strict
-
+          archive_url="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/${AOSP_CLANG_COMMIT}/${AOSP_CLANG_REVISION}.tar.gz"
           mkdir clang
-          tar --use-compress-program=unzstd -xf "$TOOLCHAIN_ARCHIVE" -C clang
-          rm "$TOOLCHAIN_ARCHIVE"
+          curl --fail --location --retry 3 "$archive_url" | tar -xz -C clang
 
-          clang_path="$(find "$PWD/clang" -path '*/bin/clang' -perm -u+x -print -quit)"
-          test -n "$clang_path"
-          toolchain_bin="$(dirname "$clang_path")"
-          # Neutron ships llvm-readobj but not an llvm-readelf alias. LLVM's
-          # readobj supports the readelf-compatible mode selected by argv[0].
-          if [ ! -e "$toolchain_bin/llvm-readelf" ]; then
-            test -x "$toolchain_bin/llvm-readobj"
-            ln -s llvm-readobj "$toolchain_bin/llvm-readelf"
-          fi
+          grep -Fxq "$AOSP_CLANG_VERSION" clang/AndroidVersion.txt
+          test -x clang/bin/clang
+          toolchain_bin="$PWD/clang/bin"
           echo "TOOLCHAIN_BIN=$toolchain_bin" >> "$GITHUB_ENV"
           echo "$toolchain_bin" >> "$GITHUB_PATH"
 
@@ -101,7 +90,8 @@ jobs:
         run: |
           set -euo pipefail
           {
-            echo "Neutron release: $TOOLCHAIN_RELEASE"
+            echo "AOSP revision: $AOSP_CLANG_REVISION"
+            echo "AOSP prebuilt commit: $AOSP_CLANG_COMMIT"
             clang --version
             ld.lld --version
             llvm-ar --version
@@ -222,7 +212,8 @@ jobs:
           {
             echo "commit=${GITHUB_SHA}"
             echo "kernel.release=$(cat kernel.release)"
-            echo "toolchain.release=$TOOLCHAIN_RELEASE"
+            echo "toolchain.revision=$AOSP_CLANG_REVISION"
+            echo "toolchain.commit=$AOSP_CLANG_COMMIT"
             clang --version | head -n 1 | sed 's/^/clang.version=/'
             ld.lld --version | head -n 1 | sed 's/^/lld.version=/'
             grep -E '^(CONFIG_KSU|CONFIG_EROFS_FS|CONFIG_NTFS_FS|CONFIG_BPF_SYSCALL|CONFIG_MODULE_SIG_FORCE)' out/.config || true
