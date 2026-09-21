@@ -44,6 +44,16 @@ bool susfs_starts_with(const char *str, const char *prefix) {
     return true;
 }
 
+static bool susfs_string_is_valid(const char *str, size_t size)
+{
+	return str[0] && memchr(str, '\0', size);
+}
+
+static bool susfs_path_is_valid(const char *path)
+{
+	return susfs_string_is_valid(path, SUSFS_MAX_LEN_PATHNAME);
+}
+
 /* sus_path */
 #ifdef CONFIG_KSU_SUSFS_SUS_PATH
 DEFINE_STATIC_SRCU(susfs_srcu_sus_path_loop);
@@ -59,6 +69,10 @@ void susfs_add_sus_path(void __user **user_info) {
 
 	if (copy_from_user(&info, (struct st_susfs_sus_path __user*)*user_info, sizeof(info))) {
 		info.err = -EFAULT;
+		goto out_copy_to_user;
+	}
+	if (!susfs_path_is_valid(info.target_pathname)) {
+		info.err = -EINVAL;
 		goto out_copy_to_user;
 	}
 
@@ -112,8 +126,8 @@ void susfs_add_sus_path_loop(void __user **user_info) {
 		goto out_copy_to_user;
 	}
 
-	if (*info.target_pathname == '\0') {
-		SUSFS_LOGE("target_pathname cannot be empty\n");
+	if (!susfs_path_is_valid(info.target_pathname)) {
+		SUSFS_LOGE("target_pathname is empty or unterminated\n");
 		info.err = -EINVAL;
 		goto out_copy_to_user;
 	}
@@ -322,7 +336,7 @@ void susfs_add_sus_kstat(void __user **user_info) {
 		goto out_copy_to_user;
 	}
 
-	if (*info.target_pathname == '\0') {
+	if (!susfs_path_is_valid(info.target_pathname)) {
 		info.err = -EINVAL;
 		goto out_copy_to_user;
 	}
@@ -435,6 +449,10 @@ void susfs_update_sus_kstat(void __user **user_info) {
 
 	if (copy_from_user(&info, (struct st_susfs_sus_kstat __user*)*user_info, sizeof(info))) {
 		info.err = -EFAULT;
+		goto out_copy_to_user;
+	}
+	if (!susfs_path_is_valid(info.target_pathname)) {
+		info.err = -EINVAL;
 		goto out_copy_to_user;
 	}
 
@@ -596,61 +614,6 @@ out_spoof_kstat:
 	rcu_read_unlock();
 }
 #endif // #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
-/* try_umount */
-#ifdef CONFIG_KSU_SUSFS_TRY_UMOUNT
-static DEFINE_MUTEX(susfs_mutex_lock_try_umount);
-extern void try_umount(const char *mnt, int flags);
-static LIST_HEAD(LH_TRY_UMOUNT_PATH);
-void susfs_add_try_umount(void __user **user_info) {
-	struct st_susfs_try_umount info = {0};
-	struct st_susfs_try_umount_list *new_list = NULL;
-
-	if (copy_from_user(&info, (struct st_susfs_try_umount __user*)*user_info, sizeof(info))) {
-		info.err = -EFAULT;
-		goto out_copy_to_user;
-	}
-
-	if (info.mnt_mode == TRY_UMOUNT_DEFAULT) {
-		info.mnt_mode = 0;
-	} else if (info.mnt_mode == TRY_UMOUNT_DETACH) {
-		info.mnt_mode = MNT_DETACH;
-	} else {
-		SUSFS_LOGE("Unsupported mnt_mode: %d\n", info.mnt_mode);
-		info.err = -EINVAL;
-		goto out_copy_to_user;
-	}
-
-	new_list = kzalloc(sizeof(struct st_susfs_try_umount_list), GFP_KERNEL);
-	if (!new_list) {
-		info.err = -ENOMEM;
-		goto out_copy_to_user;
-	}
-
-	memcpy(&new_list->info, &info, sizeof(info));
-
-	INIT_LIST_HEAD(&new_list->list);
-	mutex_lock(&susfs_mutex_lock_try_umount);
-	list_add_tail(&new_list->list, &LH_TRY_UMOUNT_PATH);
-	mutex_unlock(&susfs_mutex_lock_try_umount);
-	SUSFS_LOGI("target_pathname: '%s', umount options: %d, is successfully added to LH_TRY_UMOUNT_PATH\n", new_list->info.target_pathname, new_list->info.mnt_mode);
-	info.err = 0;
-out_copy_to_user:
-	if (copy_to_user(&((struct st_susfs_try_umount __user*)*user_info)->err, &info.err, sizeof(info.err))) {
-		info.err = -EFAULT;
-	}
-	SUSFS_LOGI("CMD_SUSFS_ADD_TRY_UMOUNT -> ret: %d\n", info.err);
-}
-
-void susfs_try_umount(uid_t uid) {
-	struct st_susfs_try_umount_list *cursor = NULL;
-
-	// We should umount in reversed order
-	list_for_each_entry_reverse(cursor, &LH_TRY_UMOUNT_PATH, list) {
-		SUSFS_LOGI("umounting '%s' for uid: %u\n", cursor->info.target_pathname, uid);
-		try_umount(cursor->info.target_pathname, cursor->info.mnt_mode);
-	}
-}
-#endif // #ifdef CONFIG_KSU_SUSFS_TRY_UMOUNT
 
 /* spoof_uname */
 #ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
@@ -665,6 +628,11 @@ void susfs_set_uname(void __user **user_info) {
 
 	if (copy_from_user(&info, (struct st_susfs_uname __user*)*user_info, sizeof(info))) {
 		info.err = -EFAULT;
+		goto out_copy_to_user;
+	}
+	if (!susfs_string_is_valid(info.release, sizeof(info.release)) ||
+	    !susfs_string_is_valid(info.version, sizeof(info.version))) {
+		info.err = -EINVAL;
 		goto out_copy_to_user;
 	}
 
@@ -690,11 +658,14 @@ out_copy_to_user:
 	SUSFS_LOGI("CMD_SUSFS_SET_UNAME -> ret: %d\n", info.err);
 }
 
-void susfs_spoof_uname(struct new_utsname* tmp) {
-	if (unlikely(my_uname.release[0] == '\0' || mutex_is_locked(&susfs_mutex_lock_set_uname)))
-		return;
-	strncpy(tmp->release, my_uname.release, __NEW_UTS_LEN);
-	strncpy(tmp->version, my_uname.version, __NEW_UTS_LEN);
+void susfs_spoof_uname(struct new_utsname *tmp)
+{
+	mutex_lock(&susfs_mutex_lock_set_uname);
+	if (my_uname.release[0] != '\0') {
+		strncpy(tmp->release, my_uname.release, __NEW_UTS_LEN);
+		strncpy(tmp->version, my_uname.version, __NEW_UTS_LEN);
+	}
+	mutex_unlock(&susfs_mutex_lock_set_uname);
 }
 #endif // #ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
 
@@ -727,8 +698,8 @@ out_copy_to_user:
 
 /* spoof_cmdline_or_bootconfig */
 #ifdef CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
-static char *fake_cmdline_or_bootconfig = NULL;
-static bool susfs_is_fake_cmdline_or_bootconfig_set = false;
+static char fake_cmdline_or_bootconfig[SUSFS_FAKE_CMDLINE_OR_BOOTCONFIG_SIZE];
+static bool susfs_is_fake_cmdline_or_bootconfig_set;
 static DEFINE_SEQLOCK(susfs_fake_cmdline_or_bootconfig_seqlock);
 
 void susfs_set_cmdline_or_bootconfig(void __user **user_info) {
@@ -748,17 +719,10 @@ void susfs_set_cmdline_or_bootconfig(void __user **user_info) {
 		goto out_copy_to_user;
 	}
 
-	if (*info->fake_cmdline_or_bootconfig == '\0') {
+	if (!susfs_string_is_valid(info->fake_cmdline_or_bootconfig,
+				   sizeof(info->fake_cmdline_or_bootconfig))) {
 		info->err = -EINVAL;
 		goto out_copy_to_user;
-	}
-
-	if (!fake_cmdline_or_bootconfig) {
-		fake_cmdline_or_bootconfig = (char *)kzalloc(SUSFS_FAKE_CMDLINE_OR_BOOTCONFIG_SIZE, GFP_KERNEL);
-		if (!fake_cmdline_or_bootconfig) {
-			info->err = -ENOMEM;
-			goto out_copy_to_user;
-		}
 	}
 
 	write_seqlock(&susfs_fake_cmdline_or_bootconfig_seqlock);
@@ -779,18 +743,30 @@ out_copy_to_user:
 	}
 }
 
-int susfs_spoof_cmdline_or_bootconfig(struct seq_file *m) {
+int susfs_spoof_cmdline_or_bootconfig(struct seq_file *m)
+{
+	char *snapshot;
 	unsigned seq;
 	int err = -EINVAL;
 
+	snapshot = kmalloc(SUSFS_FAKE_CMDLINE_OR_BOOTCONFIG_SIZE, GFP_KERNEL);
+	if (!snapshot)
+		return -ENOMEM;
+
 	do {
 		seq = read_seqbegin(&susfs_fake_cmdline_or_bootconfig_seqlock);
-		if (susfs_is_fake_cmdline_or_bootconfig_set) {
-			seq_puts(m, fake_cmdline_or_bootconfig);
-			err = 0;
-		}
+		if (susfs_is_fake_cmdline_or_bootconfig_set)
+			strlcpy(snapshot, fake_cmdline_or_bootconfig,
+				SUSFS_FAKE_CMDLINE_OR_BOOTCONFIG_SIZE);
+		else
+			snapshot[0] = '\0';
 	} while (read_seqretry(&susfs_fake_cmdline_or_bootconfig_seqlock, seq));
 
+	if (snapshot[0] != '\0') {
+		seq_puts(m, snapshot);
+		err = 0;
+	}
+	kfree(snapshot);
 	return err;
 }
 #endif
@@ -815,11 +791,12 @@ void susfs_add_open_redirect(void __user **user_info) {
 		goto out_copy_to_user;
 	}
 
-        if (*info.target_pathname == '\0') {
-                info.err = -EINVAL;
-		SUSFS_LOGE("empty target_pathname\n");
-                goto out_copy_to_user;
-        }
+	if (!susfs_path_is_valid(info.target_pathname) ||
+	    !susfs_path_is_valid(info.redirected_pathname)) {
+		info.err = -EINVAL;
+		SUSFS_LOGE("pathname is empty or unterminated\n");
+		goto out_copy_to_user;
+	}
 
 	if (info.uid_scheme < UID_NON_APP_PROC || info.uid_scheme > UID_UMOUNTED_PROC) {
 		info.err = -EINVAL;
@@ -1148,6 +1125,10 @@ void susfs_add_sus_map(void __user **user_info) {
 		info.err = -EFAULT;
 		goto out_copy_to_user;
 	}
+	if (!susfs_path_is_valid(info.target_pathname)) {
+		info.err = -EINVAL;
+		goto out_copy_to_user;
+	}
 
 	info.err = kern_path(info.target_pathname, LOOKUP_FOLLOW, &path);
 	if (info.err) {
@@ -1237,11 +1218,6 @@ void susfs_get_enabled_features(void __user **user_info) {
 #endif
 #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
 	info->err = copy_config_to_buf("CONFIG_KSU_SUSFS_SUS_KSTAT\n", buf_ptr, &copied_size, SUSFS_ENABLED_FEATURES_SIZE);
-	if (info->err) goto out_copy_to_user;
-	buf_ptr = info->enabled_features + copied_size;
-#endif
-#ifdef CONFIG_KSU_SUSFS_TRY_UMOUNT
-	info->err = copy_config_to_buf("CONFIG_KSU_SUSFS_TRY_UMOUNT\n", buf_ptr, &copied_size, SUSFS_ENABLED_FEATURES_SIZE);
 	if (info->err) goto out_copy_to_user;
 	buf_ptr = info->enabled_features + copied_size;
 #endif

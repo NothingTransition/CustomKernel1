@@ -16,35 +16,31 @@
 #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 #include <linux/susfs_def.h>
 #endif
-
 #include "inotify/inotify.h"
 #include "../fs/mount.h"
+
+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+extern int susfs_get_non_sus_mnt_id_from_mnt(struct mount *orig_mnt);
+#endif
+#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
+extern void susfs_show_map_vma_spoofer(struct inode *inode, dev_t *out_dev,
+                                      unsigned long *out_ino);
+#endif
 
 #if defined(CONFIG_PROC_FS)
 
 #if defined(CONFIG_INOTIFY_USER) || defined(CONFIG_FANOTIFY)
 
-#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
 static void show_fdinfo(struct seq_file *m, struct file *f,
-			void (*show)(struct seq_file *m,
-				     struct fsnotify_mark *mark,
-					 struct file *file))
-#else
-static void show_fdinfo(struct seq_file *m, struct file *f,
-			void (*show)(struct seq_file *m,
-				     struct fsnotify_mark *mark))
-#endif
+                        void (*show)(struct seq_file *m,
+                                     struct fsnotify_mark *mark))
 {
 	struct fsnotify_group *group = f->private_data;
 	struct fsnotify_mark *mark;
 
 	mutex_lock(&group->mark_mutex);
 	list_for_each_entry(mark, &group->marks_list, g_list) {
-#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
-		show(m, mark, f);
-#else
 		show(m, mark);
-#endif
 		if (seq_has_overflowed(m))
 			break;
 	}
@@ -86,65 +82,31 @@ static void show_mark_fhandle(struct seq_file *m, struct inode *inode)
 
 #ifdef CONFIG_INOTIFY_USER
 
-#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
-static void inotify_fdinfo(struct seq_file *m, struct fsnotify_mark *mark, struct file *file)
-#else
 static void inotify_fdinfo(struct seq_file *m, struct fsnotify_mark *mark)
-#endif
 {
 	struct inotify_inode_mark *inode_mark;
 	struct inode *inode;
-#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
-	struct mount *mnt = NULL;
-#endif
+	unsigned long ino;
+	dev_t dev;
 
 	if (!(mark->connector->flags & FSNOTIFY_OBJ_TYPE_INODE))
 		return;
 
 	inode_mark = container_of(mark, struct inotify_inode_mark, fsn_mark);
 	inode = igrab(mark->connector->inode);
-	if (inode) {
-#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
-		mnt = real_mount(file->f_path.mnt);
-		if (likely(susfs_is_current_proc_umounted()) &&
-					mnt->mnt_id >= DEFAULT_KSU_MNT_ID)
-		{
-			struct path path;
-			char *pathname = kmalloc(PAGE_SIZE, GFP_KERNEL);
-			char *dpath;
-			if (!pathname) {
-				goto out_seq_printf;
-			}
-			dpath = d_path(&file->f_path, pathname, PAGE_SIZE);
-			if (IS_ERR(dpath))
-				goto out_free_pathname;
-			if (kern_path(dpath, 0, &path))
-				goto out_free_pathname;
-			if (!d_inode(path.dentry)) {
-				path_put(&path);
-				goto out_free_pathname;
-			}
-			seq_printf(m, "inotify wd:%x ino:%lx sdev:%x mask:%x ignored_mask:0 ",
-					inode_mark->wd, path.dentry->d_inode->i_ino, path.dentry->d_inode->i_sb->s_dev,
-					inotify_mark_user_mask(mark));
-			show_mark_fhandle(m, path.dentry->d_inode);
-			seq_putc(m, '\n');
-			iput(inode);
-			path_put(&path);
-			kfree(pathname);
-			return;
-out_free_pathname:
-			kfree(pathname);
-		}
-out_seq_printf:
+	if (!inode)
+		return;
+
+	ino = inode->i_ino;
+	dev = inode->i_sb->s_dev;
+#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
+	susfs_show_map_vma_spoofer(inode, &dev, &ino);
 #endif
-		seq_printf(m, "inotify wd:%x ino:%lx sdev:%x mask:%x ignored_mask:0 ",
-			   inode_mark->wd, inode->i_ino, inode->i_sb->s_dev,
-			   inotify_mark_user_mask(mark));
-		show_mark_fhandle(m, inode);
-		seq_putc(m, '\n');
-		iput(inode);
-	}
+	seq_printf(m, "inotify wd:%x ino:%lx sdev:%x mask:%x ignored_mask:0 ",
+		   inode_mark->wd, ino, dev, inotify_mark_user_mask(mark));
+	show_mark_fhandle(m, inode);
+	seq_putc(m, '\n');
+	iput(inode);
 }
 
 void inotify_show_fdinfo(struct seq_file *m, struct file *f)
@@ -165,20 +127,33 @@ static void fanotify_fdinfo(struct seq_file *m, struct fsnotify_mark *mark)
 		mflags |= FAN_MARK_IGNORED_SURV_MODIFY;
 
 	if (mark->connector->flags & FSNOTIFY_OBJ_TYPE_INODE) {
+		unsigned long ino;
+		dev_t dev;
+
 		inode = igrab(mark->connector->inode);
 		if (!inode)
 			return;
+		ino = inode->i_ino;
+		dev = inode->i_sb->s_dev;
+#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
+		susfs_show_map_vma_spoofer(inode, &dev, &ino);
+#endif
 		seq_printf(m, "fanotify ino:%lx sdev:%x mflags:%x mask:%x ignored_mask:%x ",
-			   inode->i_ino, inode->i_sb->s_dev,
-			   mflags, mark->mask, mark->ignored_mask);
+			   ino, dev, mflags, mark->mask, mark->ignored_mask);
 		show_mark_fhandle(m, inode);
 		seq_putc(m, '\n');
 		iput(inode);
 	} else if (mark->connector->flags & FSNOTIFY_OBJ_TYPE_VFSMOUNT) {
 		struct mount *mnt = real_mount(mark->connector->mnt);
+		int mnt_id = mnt->mnt_id;
 
+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+		if (susfs_is_current_proc_umounted() &&
+		    mnt_id >= DEFAULT_KSU_MNT_ID)
+			mnt_id = susfs_get_non_sus_mnt_id_from_mnt(mnt);
+#endif
 		seq_printf(m, "fanotify mnt_id:%x mflags:%x mask:%x ignored_mask:%x\n",
-			   mnt->mnt_id, mflags, mark->mask, mark->ignored_mask);
+			   mnt_id, mflags, mark->mask, mark->ignored_mask);
 	}
 }
 

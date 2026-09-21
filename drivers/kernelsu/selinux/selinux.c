@@ -212,11 +212,6 @@ bool susfs_is_current_ksu_domain(void)
 {
 	return is_ksu_domain();
 }
-
-bool susfs_is_current_zygote_domain(void)
-{
-	return is_zygote(current_cred());
-}
 #endif
 
 bool is_init(const struct cred *cred)

@@ -39,16 +39,11 @@
 #define SUSFS_MAX_VERSION_BUFSIZE 16
 #define SUSFS_MAX_VARIANT_BUFSIZE 16
 
-#define TRY_UMOUNT_DEFAULT 0 /* used by susfs_try_umount() */
-#define TRY_UMOUNT_DETACH 1 /* used by susfs_try_umount() */
-
 #define DEFAULT_KSU_MNT_ID 500000 /* used by mount->mnt_id */
-#define DEFAULT_SUS_MNT_ID_FOR_KSU_PROC_UNSHARE 1000000 /* used by vfsmount->susfs_mnt_id_backup */
 #define DEFAULT_KSU_MNT_GROUP_ID 5000 /* used by mount->mnt_group_id */
 #define VFSMOUNT_MNT_FLAGS_KSU_UNSHARED_MNT 0x80000000 /* used for mounts that are unshared by ksu process */
 
 /*
- * mount->mnt.susfs_mnt_id_backup => storing original mount's mnt_id
  * inode->i_state => A 'unsigned long' type storing flag 'AS_FLAGS_', bit 1 to 31 is not usable since 6.12
  * nd->state => storing flag 'ND_STATE_'
  * nd->flags => storing flag 'ND_FLAGS_'
