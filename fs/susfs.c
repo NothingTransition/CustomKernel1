@@ -902,7 +902,7 @@ void susfs_add_open_redirect(void __user **user_info) {
 		 * target's destination leaves a stale reverse entry behind.
 		 */
 		hash_for_each_possible_safe(OPEN_REDIRECT_HLIST, tmp_entry_redirected,
-				t	    tmp_hlist_node, node,
+					    tmp_hlist_node, node,
 					    tmp_entry_target->redirected_ino) {
 			if (tmp_entry_redirected->reversed_lookup_only &&
 			    tmp_entry_redirected->target_dev == tmp_entry_target->redirected_dev &&
