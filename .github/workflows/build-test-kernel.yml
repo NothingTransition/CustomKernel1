@@ -131,6 +131,39 @@ jobs:
           strings out/vmlinux 2>&1 | grep -i "kernelsu" | head -n 20 || echo "no KSU string in vmlinux (maybe stripped)"
           grep -a "KernelSU" out/vmlinux 2>&1 | head -n 5 || true
 
+      - name: Debug sizes (why 2M? think double)
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          echo "=== DEBUG SIZES ===" | tee /tmp/sizes.txt
+          echo "out/arch/arm64/boot:" | tee -a /tmp/sizes.txt
+          ls -lh out/arch/arm64/boot/ 2>&1 | tee -a /tmp/sizes.txt
+          du -h out/arch/arm64/boot/ 2>&1 | tee -a /tmp/sizes.txt
+          echo "" | tee -a /tmp/sizes.txt
+          echo "out/vmlinux:" | tee -a /tmp/sizes.txt
+          ls -lh out/vmlinux* out/System.map 2>&1 | tee -a /tmp/sizes.txt
+          du -h out/vmlinux 2>&1 | tee -a /tmp/sizes.txt
+          echo "" | tee -a /tmp/sizes.txt
+          echo "out/drivers/kernelsu:" | tee -a /tmp/sizes.txt
+          ls -lh out/drivers/kernelsu/*.o 2>&1 | tee -a /tmp/sizes.txt
+          echo "" | tee -a /tmp/sizes.txt
+          echo "find all boot images:" | tee -a /tmp/sizes.txt
+          find out/arch/arm64/boot -type f 2>&1 | xargs ls -lh 2>&1 | tee -a /tmp/sizes.txt
+          echo "" | tee -a /tmp/sizes.txt
+          echo "AnyKernel3 repo:" | tee -a /tmp/sizes.txt
+          ls -lh AnyKernel3/ 2>&1 | tee -a /tmp/sizes.txt
+          echo "" | tee -a /tmp/sizes.txt
+          echo "build.log tail:" | tee -a /tmp/sizes.txt
+          tail -n 50 build.log 2>&1 | tee -a /tmp/sizes.txt
+          echo "" | tee -a /tmp/sizes.txt
+          echo "=== END SIZES ===" | tee -a /tmp/sizes.txt
+          cat /tmp/sizes.txt
+          # also write to summary
+          echo "### Debug Sizes" >> $GITHUB_STEP_SUMMARY || true
+          cat /tmp/sizes.txt >> $GITHUB_STEP_SUMMARY || true
+          cp /tmp/sizes.txt ./sizes.txt || true
+
       - name: Package AnyKernel3
         shell: bash
         run: |
@@ -149,26 +182,32 @@ jobs:
           echo "=== Checking Image files ==="
           ls -lh out/arch/arm64/boot/Image* 2>&1 || true
           ls -lh out/arch/arm64/boot/ 2>&1 || true
-          # Ensure AnyKernel clean
+          # Prefer repo's AnyKernel3 (already has device-specific anykernel.sh), fallback to clone
           rm -rf AnyKernel || true
-          echo "=== Cloning AnyKernel3 ==="
-          rm -rf /tmp/package_clone.log || true
-          if ! git clone --depth=1 https://github.com/Amritorock/AnyKernel3 -b r5x AnyKernel > /tmp/package_clone.log 2>&1; then
-            echo "Amritorock r5x clone failed, log:"
-            cat /tmp/package_clone.log || true
-            echo "Trying osm0sis master"
-            rm -rf AnyKernel || true
-            if ! git clone --depth=1 https://github.com/osm0sis/AnyKernel3 AnyKernel > /tmp/package_clone.log 2>&1; then
-              echo "osm0sis clone also failed"
+          if [ -d AnyKernel3 ]; then
+            echo "Using repo's AnyKernel3"
+            cp -a AnyKernel3 AnyKernel 2>&1 || { echo "cp -a failed"; }
+            rm -rf AnyKernel/.git 2>&1 || true
+          else
+            echo "Repo AnyKernel3 not found, cloning"
+            rm -rf /tmp/package_clone.log || true
+            if ! git clone --depth=1 https://github.com/Amritorock/AnyKernel3 -b r5x AnyKernel > /tmp/package_clone.log 2>&1; then
+              echo "Amritorock r5x clone failed, log:"
               cat /tmp/package_clone.log || true
-              echo "Trying Amritorock without branch"
+              echo "Trying osm0sis master"
               rm -rf AnyKernel || true
-              git clone --depth=1 https://github.com/Amritorock/AnyKernel3 AnyKernel > /tmp/package_clone.log 2>&1 || true
-              cat /tmp/package_clone.log || true
+              if ! git clone --depth=1 https://github.com/osm0sis/AnyKernel3 AnyKernel > /tmp/package_clone.log 2>&1; then
+                echo "osm0sis clone also failed"
+                cat /tmp/package_clone.log || true
+                echo "Trying Amritorock without branch"
+                rm -rf AnyKernel || true
+                git clone --depth=1 https://github.com/Amritorock/AnyKernel3 AnyKernel > /tmp/package_clone.log 2>&1 || true
+                cat /tmp/package_clone.log || true
+              fi
             fi
+            echo "=== clone log ==="
+            cat /tmp/package_clone.log 2>&1 | head -n 50 || true
           fi
-          echo "=== clone log ==="
-          cat /tmp/package_clone.log 2>&1 | head -n 50 || true
           ls -lh AnyKernel/ 2>&1 | head -n 80 || true
           if [ ! -d AnyKernel ]; then
             echo "AnyKernel directory missing after clone attempts!"
@@ -193,12 +232,17 @@ jobs:
             echo "Packaging Image.gz"
             cp -v out/arch/arm64/boot/Image.gz AnyKernel/ 2>&1 || { echo "cp Image.gz failed"; }
             ls -lh AnyKernel/Image.gz 2>&1 || true
+            # also copy dtb/dtbo if they exist (like other workflow)
+            for f in out/arch/arm64/boot/dtb.img out/arch/arm64/boot/dtbo.img out/arch/arm64/boot/dts/qcom/*.dtbo; do
+              if [ -f "$f" ]; then echo "Copying $f"; cp -v "$f" AnyKernel/ 2>&1 || true; fi
+            done
             find out/arch/arm64/boot -name "*.dtb" -exec cp -v {} AnyKernel/ \; 2>&1 | head -n 20 || true
           elif [ -f out/arch/arm64/boot/Image ]; then
             echo "Image.gz missing, packaging Image"
             cp -v out/arch/arm64/boot/Image AnyKernel/ 2>&1 || { echo "cp Image failed"; }
             gzip -c out/arch/arm64/boot/Image > AnyKernel/Image.gz 2>&1 || { echo "gzip failed"; }
             ls -lh AnyKernel/Image* 2>&1 || true
+            for f in out/arch/arm64/boot/dtb.img out/arch/arm64/boot/dtbo.img; do [ -f "$f" ] && cp -v "$f" AnyKernel/ || true; done
           else
             echo "No bootable image found!"
             ls -R out/arch/arm64/boot/ 2>&1 | head -n 100 || true
@@ -262,6 +306,9 @@ jobs:
           cp /tmp/package.log ./package.log 2>&1 || true
           cp /tmp/zip.log ./zip.log 2>&1 || true
           ls -lh *.log 2>&1 | head -n 20 || true
+          echo "=== SIZES TXT ==="
+          ls -lh Stormbreaker* 2>&1 | head -n 20 || true
+          du -h Stormbreaker* 2>&1 | head -n 20 || true
 
       - name: Upload package logs (always)
         if: always()
@@ -287,9 +334,14 @@ jobs:
             Stormbreaker*.zip
             Stormbreaker*.tar.gz
             out/arch/arm64/boot/Image*
+            out/arch/arm64/boot/dtb.img
+            out/arch/arm64/boot/dtbo.img
+            out/arch/arm64/boot/dts/qcom/*.dtbo
             out/vmlinux
             build.log
             package.log
+            sizes.txt
+            /tmp/sizes.txt
           if-no-files-found: warn
           retention-days: 14
 
