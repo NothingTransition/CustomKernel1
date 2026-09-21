@@ -1,5 +1,9 @@
 static __always_inline void ksu_handle_setresuid_cred(struct cred *new, const struct cred *old)
 {
+#ifdef CONFIG_KSU_SUSFS
+	bool is_susfs_app;
+#endif
+
 	if (!new || !old)
 		return;
 
@@ -22,13 +26,23 @@ static __always_inline void ksu_handle_setresuid_cred(struct cred *new, const st
 		goto kill_seccomp;
 
 #ifdef CONFIG_KSU_SUSFS
-	if (is_appuid(new_uid) || is_isolated_process(new_uid) ||
-	    new_uid == WEBVIEW_ZYGOTE_UID)
+	is_susfs_app = is_appuid(new_uid) || is_isolated_process(new_uid) ||
+		       new_uid == WEBVIEW_ZYGOTE_UID;
+
+	if (is_susfs_app)
 		susfs_set_current_proc_umounted();
 #endif
 
 	// Handle kernel umount
 	ksu_handle_umount(new, old);
+#ifdef CONFIG_KSU_SUSFS
+	/* Re-apply looped path marks only after namespace unmount work has
+	 * completed. The work item is coalesced safely if several zygote
+	 * children arrive at once.
+	 */
+	if (is_susfs_app)
+		schedule_work(&susfs_extra_works);
+#endif
 	return;
 
 install_ksu_fd:

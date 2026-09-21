@@ -323,7 +323,7 @@ static int susfs_mark_inode_sus_kstat(char *target_pathname, struct st_susfs_sus
 
 out_path_put_path:
 	path_put(&path);
-	return 0;
+	return err;
 }
 
 void susfs_add_sus_kstat(void __user **user_info) {
@@ -606,8 +606,10 @@ out_spoof_kstat:
 			entry->is_fuse == is_fuse)
 		{
 			SUSFS_LOGI("spoofing kstat for target_ino: %lu, target_dev: %u\n", target_ino, target_dev);
-			*out_dev = entry->info.spoofed_dev;
-			*out_ino = entry->info.spoofed_ino;
+			if (entry->info.flags & KSTAT_SPOOF_DEV)
+				*out_dev = entry->info.spoofed_dev;
+			if (entry->info.flags & KSTAT_SPOOF_INO)
+				*out_ino = entry->info.spoofed_ino;
 			rcu_read_unlock();
 			return;
 		}
@@ -925,7 +927,11 @@ void susfs_add_open_redirect(void __user **user_info) {
 		set_bit(AS_FLAGS_OPEN_REDIRECT, &redirected_inode->i_state);
 		set_bit(AS_FLAGS_OPEN_REDIRECT, &target_inode->i_state);
 		mutex_unlock(&susfs_mutex_lock_open_redirect);
-		synchronize_rcu();
+		/* Redirect lookups may sleep while allocating filenames, so they
+		 * use SRCU rather than classic RCU. Wait for that exact reader
+		 * domain before reclaiming replaced entries.
+		 */
+		synchronize_srcu(&susfs_srcu_open_redirect);
 		if (is_second_dup_found)
 			kfree(tmp_entry_redirected);
 		kfree(tmp_entry_target);

@@ -15,6 +15,7 @@
 #include <linux/version.h>
 #include <linux/jump_label.h>
 #include <linux/compat.h>
+#include <linux/workqueue.h>
 
 #define NOMOUNT_VERSION "20"
 #define NOMOUNT_MAGIC_SIG 0x4E4F4D4F554E54ULL /* "NOMOUNT" in hex */
@@ -84,7 +85,7 @@ struct nomount_child_node {
     u8 d_type;
     u8 flags;
     u16 name_len;
-    struct nomount_rule *rule;
+    struct nomount_rule __rcu *rule;
     char name[];
 };
 
@@ -98,6 +99,7 @@ struct nomount_child_array {
 
 struct nomount_dir_node {
     struct rcu_head rcu;
+    struct work_struct iput_work;
     struct nomount_child_array __rcu *children;
     u64 bloom_mask;
     struct inode *v_inode;
@@ -119,6 +121,7 @@ struct nomount_rule {
     struct hlist_node vpath_node;
     struct nomount_dir_node *parent_dir;
     struct nomount_dir_node *this_dir;
+    struct nomount_rule __rcu *same_path_next;
     struct path r_path;
     unsigned long v_ino;
     char paths[];

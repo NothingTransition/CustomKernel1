@@ -6,6 +6,7 @@
 #include <linux/utsname.h>
 #include <linux/hashtable.h>
 #include <linux/path.h>
+#include <linux/workqueue.h>
 #include <linux/susfs_def.h>
 #include <linux/stat.h>
 #include <linux/statfs.h>
@@ -238,6 +239,7 @@ void susfs_show_variant(void __user **user_info);
 void susfs_show_version(void __user **user_info);
 
 void susfs_start_sdcard_monitor_fn(void);
+extern struct work_struct susfs_extra_works;
 
 /* susfs_init */
 void susfs_init(void);
