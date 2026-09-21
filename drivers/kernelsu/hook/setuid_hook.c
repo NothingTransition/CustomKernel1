@@ -23,11 +23,8 @@ static __always_inline void ksu_handle_setresuid_cred(struct cred *new, const st
 
 #ifdef CONFIG_KSU_SUSFS
 	if (is_appuid(new_uid) || is_isolated_process(new_uid) ||
-	    new_uid == WEBVIEW_ZYGOTE_UID) {
-		task_lock(current);
-		current->susfs_task_state |= TASK_STRUCT_NON_ROOT_USER_APP_PROC;
-		task_unlock(current);
-	}
+	    new_uid == WEBVIEW_ZYGOTE_UID)
+		susfs_set_current_proc_umounted();
 #endif
 
 	// Handle kernel umount

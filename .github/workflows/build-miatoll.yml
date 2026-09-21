@@ -109,7 +109,7 @@ jobs:
           require_config 'CONFIG_KSU_SUSFS_SUS_PATH=y'
           require_config 'CONFIG_KSU_SUSFS_SUS_MOUNT=y'
           require_config 'CONFIG_KSU_SUSFS_SUS_KSTAT=y'
-          require_config 'CONFIG_KSU_SUSFS_TRY_UMOUNT=y'
+          require_config 'CONFIG_KSU_SUSFS_SUS_MAP=y'
           require_config 'CONFIG_KSU_SUSFS_SPOOF_UNAME=y'
           require_config 'CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y'
           require_config 'CONFIG_KSU_SUSFS_OPEN_REDIRECT=y'
