@@ -215,6 +215,11 @@ static struct mount *susfs_alloc_unshare_ksu_vfsmnt(const char *name, int old_mn
 
 	if (mnt) {
 		mnt->mnt_id = old_mnt_id;
+		/* This ID is borrowed from the source mount, not allocated by IDA.
+		 * Mark it immediately so every allocation-failure path avoids
+		 * freeing an ID that still belongs to the source namespace.
+		 */
+		mnt->mnt.mnt_flags |= VFSMOUNT_MNT_FLAGS_KSU_UNSHARED_MNT;
 
 		if (name) {
 			mnt->mnt_devname = kstrdup_const(name,

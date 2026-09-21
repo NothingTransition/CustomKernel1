@@ -116,10 +116,12 @@ static void inotify_fdinfo(struct seq_file *m, struct fsnotify_mark *mark)
 				goto out_seq_printf;
 			}
 			dpath = d_path(&file->f_path, pathname, PAGE_SIZE);
-			if (!dpath) {
+			if (IS_ERR(dpath))
 				goto out_free_pathname;
-			}
-			if (kern_path(dpath, 0, &path)) {
+			if (kern_path(dpath, 0, &path))
+				goto out_free_pathname;
+			if (!d_inode(path.dentry)) {
+				path_put(&path);
 				goto out_free_pathname;
 			}
 			seq_printf(m, "inotify wd:%x ino:%lx sdev:%x mask:%x ignored_mask:0 ",

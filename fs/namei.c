@@ -5048,7 +5048,7 @@ static int generic_readlink(struct dentry *dentry, char __user *buffer,
 #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
 	if (SUSFS_IS_INODE_OPEN_REDIRECT(inode)) {
 		res = susfs_open_redirect_spoof_vfs_readlink(inode, buffer, buflen);
-		if (!res) {
+		if (res >= 0) {
 			do_delayed_call(&done);
 			return res;
 		}
@@ -5082,7 +5082,7 @@ int vfs_readlink(struct dentry *dentry, char __user *buffer, int buflen)
 		{
 			if (SUSFS_IS_INODE_OPEN_REDIRECT(inode)) {
 				res = susfs_open_redirect_spoof_vfs_readlink(inode, buffer, buflen);
-				if (!res)
+				if (res >= 0)
 					return res;
 			}
 			return inode->i_op->readlink(dentry, buffer, buflen);
