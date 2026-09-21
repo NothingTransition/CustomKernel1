@@ -88,6 +88,7 @@ static void inotify_fdinfo(struct seq_file *m, struct fsnotify_mark *mark)
 	struct inode *inode;
 	unsigned long ino;
 	dev_t dev;
+	bool metadata_spoofed = false;
 
 	if (!(mark->connector->flags & FSNOTIFY_OBJ_TYPE_INODE))
 		return;
@@ -101,10 +102,12 @@ static void inotify_fdinfo(struct seq_file *m, struct fsnotify_mark *mark)
 	dev = inode->i_sb->s_dev;
 #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
 	susfs_show_map_vma_spoofer(inode, &dev, &ino);
+	metadata_spoofed = ino != inode->i_ino || dev != inode->i_sb->s_dev;
 #endif
 	seq_printf(m, "inotify wd:%x ino:%lx sdev:%x mask:%x ignored_mask:0 ",
 		   inode_mark->wd, ino, dev, inotify_mark_user_mask(mark));
-	show_mark_fhandle(m, inode);
+	if (!metadata_spoofed)
+		show_mark_fhandle(m, inode);
 	seq_putc(m, '\n');
 	iput(inode);
 }
@@ -129,6 +132,7 @@ static void fanotify_fdinfo(struct seq_file *m, struct fsnotify_mark *mark)
 	if (mark->connector->flags & FSNOTIFY_OBJ_TYPE_INODE) {
 		unsigned long ino;
 		dev_t dev;
+		bool metadata_spoofed = false;
 
 		inode = igrab(mark->connector->inode);
 		if (!inode)
@@ -137,10 +141,12 @@ static void fanotify_fdinfo(struct seq_file *m, struct fsnotify_mark *mark)
 		dev = inode->i_sb->s_dev;
 #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
 		susfs_show_map_vma_spoofer(inode, &dev, &ino);
+		metadata_spoofed = ino != inode->i_ino || dev != inode->i_sb->s_dev;
 #endif
 		seq_printf(m, "fanotify ino:%lx sdev:%x mflags:%x mask:%x ignored_mask:%x ",
 			   ino, dev, mflags, mark->mask, mark->ignored_mask);
-		show_mark_fhandle(m, inode);
+		if (!metadata_spoofed)
+			show_mark_fhandle(m, inode);
 		seq_putc(m, '\n');
 		iput(inode);
 	} else if (mark->connector->flags & FSNOTIFY_OBJ_TYPE_VFSMOUNT) {

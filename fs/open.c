@@ -1096,6 +1096,7 @@ long do_sys_open(int dfd, const char __user *filename, int flags, umode_t mode)
 #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
 	struct filename *fake_filename = NULL;
 	bool is_inode_open_redirect = false;
+	int redirect_err;
 #endif // #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
 
 
@@ -1117,7 +1118,14 @@ retry:
 			struct inode *inode = file_inode(f);
 			if (SUSFS_IS_INODE_OPEN_REDIRECT_WITHOUT_UID_CHECK(inode)) {
 				fake_filename = susfs_open_redirect_spoof_do_sys_openat(inode);
-				if (fake_filename && !IS_ERR(fake_filename)) {
+				if (IS_ERR(fake_filename)) {
+					redirect_err = PTR_ERR(fake_filename);
+					filp_close(f, NULL);
+					put_unused_fd(fd);
+					putname(tmp);
+					return redirect_err;
+				}
+				if (fake_filename) {
 					is_inode_open_redirect = true;
 					filp_close(f, NULL);
 					putname(tmp);

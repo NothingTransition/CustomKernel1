@@ -490,6 +490,7 @@ void susfs_update_sus_kstat(void __user **user_info) {
 		}
 	}
 	mutex_unlock(&susfs_mutex_lock_sus_kstat);
+	kfree(new_entry);
 	info.err = -ENOENT;
 
 out_copy_to_user:
@@ -857,7 +858,12 @@ void susfs_add_open_redirect(void __user **user_info) {
 	new_entry_target->info.uid_scheme = info.uid_scheme;
 	new_entry_target->reversed_lookup_only = false;
 	new_entry_target->spoofed_mnt_id = real_mount(target_path.mnt)->mnt_id;
-	(void)vfs_statfs(&target_path, &new_entry_target->spoofed_kstatfs);
+	info.err = vfs_statfs(&target_path, &new_entry_target->spoofed_kstatfs);
+	if (info.err) {
+		kfree(new_entry_redirected);
+		kfree(new_entry_target);
+		goto out_path_put_target_path;
+	}
 	memcpy(&new_entry_target->info, &info, sizeof(info));
 
 	new_entry_redirected->target_ino = redirected_inode->i_ino;
@@ -891,8 +897,17 @@ void susfs_add_open_redirect(void __user **user_info) {
 	}
 
 	if (is_first_dup_found) {
-		hash_for_each_possible_safe(OPEN_REDIRECT_HLIST, tmp_entry_redirected, tmp_hlist_node, node, redirected_inode->i_ino) {
-			if (!strcmp(tmp_entry_redirected->info.target_pathname, info.redirected_pathname)) {
+		/* Remove the reverse half of the old pair using the old mapping,
+		 * not the newly requested redirected inode. Otherwise changing a
+		 * target's destination leaves a stale reverse entry behind.
+		 */
+		hash_for_each_possible_safe(OPEN_REDIRECT_HLIST, tmp_entry_redirected,
+				t	    tmp_hlist_node, node,
+					    tmp_entry_target->redirected_ino) {
+			if (tmp_entry_redirected->reversed_lookup_only &&
+			    tmp_entry_redirected->target_dev == tmp_entry_target->redirected_dev &&
+			    !strcmp(tmp_entry_redirected->info.redirected_pathname,
+				    tmp_entry_target->info.target_pathname)) {
 				is_second_dup_found = true;
 				hash_del_rcu(&tmp_entry_redirected->node);
 				break;
@@ -904,9 +919,11 @@ void susfs_add_open_redirect(void __user **user_info) {
 			new_entry_redirected->info.target_pathname, new_entry_redirected->info.redirected_pathname, new_entry_redirected->target_ino, new_entry_redirected->redirected_ino, new_entry_redirected->target_dev, new_entry_redirected->redirected_dev, new_entry_redirected->info.uid_scheme, new_entry_redirected->reversed_lookup_only, new_entry_redirected->spoofed_mnt_id);
 		hash_add_rcu(OPEN_REDIRECT_HLIST, &new_entry_target->node, new_entry_target->target_ino);
 		hash_add_rcu(OPEN_REDIRECT_HLIST, &new_entry_redirected->node, new_entry_redirected->target_ino);
-		// we need to mark both target and redirected path inode just for spoofing readlink as well
-		set_bit(AS_FLAGS_OPEN_REDIRECT, &redirected_inode->i_mapping->flags);
-		set_bit(AS_FLAGS_OPEN_REDIRECT, &target_inode->i_mapping->flags);
+		/* All redirect tests inspect inode->i_state. Keep replacement and
+		 * first-insertion paths consistent.
+		 */
+		set_bit(AS_FLAGS_OPEN_REDIRECT, &redirected_inode->i_state);
+		set_bit(AS_FLAGS_OPEN_REDIRECT, &target_inode->i_state);
 		mutex_unlock(&susfs_mutex_lock_open_redirect);
 		synchronize_rcu();
 		if (is_second_dup_found)
@@ -1195,8 +1212,11 @@ void susfs_get_enabled_features(void __user **user_info) {
 	size_t copied_size = 0;
 
 	if (!info) {
-		info->err = -ENOMEM;
-		goto out_copy_to_user;
+		int err = -ENOMEM;
+
+		copy_to_user(&((struct st_susfs_enabled_features __user *)*user_info)->err,
+			     &err, sizeof(err));
+		return;
 	}
 
 	if (copy_from_user(info, (struct st_susfs_enabled_features __user*)*user_info, sizeof(struct st_susfs_enabled_features))) {
@@ -1359,6 +1379,7 @@ static int watch_one_dir(struct watch_dir *wd)
 	if (!wd->inode) {
 		SUSFS_LOGE("wd->inode is NULL\n");
 		path_put(&wd->kpath);
+		memset(&wd->kpath, 0, sizeof(wd->kpath));
 		return -ENOENT;
 	}
 	ihold(wd->inode);
@@ -1369,6 +1390,7 @@ static int watch_one_dir(struct watch_dir *wd)
 		iput(wd->inode);
 		wd->inode = NULL;
 		path_put(&wd->kpath);
+		memset(&wd->kpath, 0, sizeof(wd->kpath));
 		return ret;
 	}
 	SUSFS_LOGI("watching %s\n", wd->path);
@@ -1455,14 +1477,23 @@ static int susfs_sdcard_monitor_fn(void *data)
 	g = fsnotify_alloc_group(&fsnotify_ops);
 #endif
 	if (IS_ERR(g)) {
-		return PTR_ERR(g);
+		ret = PTR_ERR(g);
+		g = NULL;
+		WRITE_ONCE(susfs_is_sdcard_android_data_decrypted, true);
+		return ret;
 	}
 
 	ret = watch_one_dir(&g_watch);
+	if (ret) {
+		struct fsnotify_group *grp = xchg(&g, NULL);
+
+		if (grp)
+			fsnotify_destroy_group(grp);
+		WRITE_ONCE(susfs_is_sdcard_android_data_decrypted, true);
+	}
 
 	SUSFS_LOGI("ret: %d\n", ret);
-
-	return 0;
+	return ret;
 }
 
 void susfs_start_sdcard_monitor_fn(void) {
