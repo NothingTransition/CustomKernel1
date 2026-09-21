@@ -36,7 +36,7 @@ static void *ksu_kvmalloc(size_t size, gfp_t flags)
 	void *buf = kmalloc(size, flags);
 	if (!buf)
 		buf = vmalloc(size);
-	
+
 	return buf;
 }
 #define kvmalloc ksu_kvmalloc
@@ -68,7 +68,7 @@ __weak long copy_from_kernel_nofault(void *dst, const void *src, size_t size)
 }
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 8, 0) 
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 8, 0)
 __weak long copy_from_user_nofault(void *dst, const void __user *src, size_t size)
 {
 	// https://elixir.bootlin.com/linux/v5.8/source/mm/maccess.c#L205
@@ -169,21 +169,46 @@ static ssize_t ksu_kernel_write_compat(struct file *p, const void *buf, size_t c
 #endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3, 6, 0)
+#if 0 // this does work, but less portable, we can override with d_path + filp_open instead
 static inline struct file *ksu_dentry_open(const struct path *path, int flags, const struct cred *cred)
 {
+	// old dentry_open consumes a reference either on failure or success, we have to take one
+	// see nameidata_to_filp
+	path_get(path);
 	return dentry_open((*path).dentry, (*path).mnt, flags, cred);
 }
-#define dentry_open ksu_dentry_open
+#endif
+static struct file *ksu_dentry_open_filp(const struct path *path, int flags, const struct cred *cred)
+{
+	char *buf __offstack_flags(PATH_MAX, GFP_KERNEL);
+	if (!buf)
+		return ERR_PTR(-ENOMEM);
+
+	char *realpath = d_path(path, buf, PATH_MAX);
+	if (IS_ERR(realpath) || realpath == buf)
+		return ERR_PTR(-ENOENT);
+
+	const struct cred *c = nullptr;
+	if (cred && cred != current_cred())
+		c = override_creds(cred);
+
+	struct file *f = filp_open(realpath, flags, 0);
+	if (c)
+		revert_creds(c);
+
+	return f;
+}
+#define dentry_open ksu_dentry_open_filp
 #endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 9, 0)
 __weak int path_mount(const char *dev_name, struct path *path, const char *type_page, unsigned long flags, void *data_page)
 {
-	char *buf __offstack_flags(PATH_MAX, GFP_KERNEL | __GFP_ZERO);
+	char *buf __offstack_flags(PATH_MAX, GFP_KERNEL);
 	if (!buf)
 		return -ENOMEM;
 
-	char *realpath = d_path(path, buf, PATH_MAX - 1);
+	char *realpath = d_path(path, buf, PATH_MAX);
 	if (IS_ERR(realpath) || realpath == buf)
 		return -ENOENT;
 
@@ -197,26 +222,7 @@ __weak int path_mount(const char *dev_name, struct path *path, const char *type_
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 9, 0)
 
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(4, 17, 0)
-#ifdef MODULE // bring an inline one for LKM
-extern long __arm64_sys_umount(struct pt_regs *);
-#define ksys_umount(name, flags) ({	\
-	struct pt_regs regs;		\
-	PT_REGS_PARM1(&regs) = name;	\
-	PT_REGS_PARM2(&regs) = flags;	\
-	(int)__arm64_sys_umount(&regs);	\
-})
-#else	/* ! MODULE */
-/**
- * if ksys_umount does NOT exist, it should have path_umount!
- * unreachable! polyfill is here so it compiles if thats the case.
- */
-__weak int ksys_umount(char __user *name, int flags) { return -ENOSYS; }
-#endif	/* ! MODULE */
-#else	// < 4.17
-#define ksys_umount(name, flags) ({ (int)sys_umount(name, flags); })
-#endif	// < 4.17
-
+static __always_inline int ksu_sys_umount(char __user *name, int flags);
 __weak int path_umount(struct path *path, int flags)
 {
 	char buf[256];
@@ -228,26 +234,23 @@ __weak int path_umount(struct path *path, int flags)
 
 	mm_segment_t old_fs = get_fs();
 	set_fs(KERNEL_DS);
-	ret = ksys_umount((char __user *)usermnt, flags);
+	ret = ksu_sys_umount((char __user *)usermnt, flags);
 	set_fs(old_fs);
 
 	// release ref here! user_path_at increases it
 	// then only cleans for itself
 out:
-	path_put(path); 
+	path_put(path);
 	return ret;
 }
 #endif // < 5.9
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 13, 0)
-#ifndef replace_fops
-#define replace_fops(f, fops) \
-	do {	\
-		struct file *__file = (f); \
-		fops_put(__file->f_op); \
-		BUG_ON(!(__file->f_op = (fops))); \
-	} while(0)
-#endif
+#if LINUX_VERSION_CODE < KERNEL_VERSION(3, 13, 0) && !defined(replace_fops)
+#define replace_fops(f, fops) do {		\
+	struct file *__file = (f);		\
+	fops_put(__file->f_op);			\
+	BUG_ON(!(__file->f_op = (fops))); 	\
+} while(0)
 #endif
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 4, 0) && defined(CONFIG_JUMP_LABEL)
@@ -383,7 +386,7 @@ __weak char *bin2hex(char *dst, const void *src, size_t count)
 #endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3, 9, 0)
-#define file_inode(f) ((f)->f_path.dentry->d_inode)
+#define file_inode(file) ((file)->f_path.dentry->d_inode)
 #endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 1, 0) && !defined(CONFIG_LSM)
@@ -436,16 +439,14 @@ __weak unsigned long vm_mmap(struct file *file, unsigned long addr, unsigned lon
 }
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION (4, 12, 0)
-#ifndef ALIGN_DOWN
+#if LINUX_VERSION_CODE < KERNEL_VERSION (4, 12, 0) && !defined(ALIGN_DOWN)
 #define ALIGN_DOWN(x, a) __ALIGN_KERNEL((x) - ((a) - 1), (a))
-#endif
 #endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION (3, 9, 0)
 static inline int __must_check ksu_kref_get_unless_zero(struct kref *kref)
-{ 
-	return atomic_add_unless(&kref->refcount, 1, 0); 
+{
+	return atomic_add_unless(&kref->refcount, 1, 0);
 }
 #define kref_get_unless_zero ksu_kref_get_unless_zero
 #endif // < 3.9
@@ -487,6 +488,7 @@ static inline struct key *ksu_get_current_session_keyring() { return rcu_derefer
 
 static void ksu_grab_init_session_keyring()
 {
+	extern struct cred* ksu_cred;
 	extern bool is_init(const struct cred* cred);
 	extern int install_session_keyring_to_cred(struct cred *, struct key *);
 	static struct key *init_session_keyring = nullptr;

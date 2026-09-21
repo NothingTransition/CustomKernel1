@@ -8,7 +8,7 @@ struct uid_data {
 	char package[KSU_MAX_PACKAGE_NAME];
 };
 
-static __always_inline void crown_manager(const char *apk, struct list_head *uid_data)
+static void crown_manager(const char *apk, struct list_head *uid_data)
 {
 	char pkg[KSU_MAX_PACKAGE_NAME];
 	if (get_pkg_from_apk_path(pkg, apk) < 0) {
@@ -119,12 +119,12 @@ FILLDIR_RETURN_TYPE my_actor(MY_ACTOR_CTX_ARG, const char *name,
 		strscpy(data->dirpath, dirpath, DATA_PATH_LEN);
 		data->depth = my_ctx->depth - 1;
 		list_add_tail(&data->list, my_ctx->data_path_list);
-		
+
 		return FILLDIR_ACTOR_CONTINUE;
 	}
 
 	// now put this on candidate_path
-	if (d_type == DT_REG && namelen == 8 && !__builtin_memcmp(name, "base.apk", 8)) {
+	if (d_type == DT_REG && namelen == 8 && !memcmp_inline(name, "base.apk", 8)) {
 		snprintf(candidate_path, DATA_PATH_LEN, "%s/%.*s", my_ctx->parent_dir, namelen, name);
 	}
 
@@ -173,7 +173,7 @@ static noinline void search_manager(const char *path, int depth, struct list_hea
 			if (stop)
 				goto skip_iterate;
 
-			struct file *file = filp_open(pos->dirpath, O_RDONLY | O_NOFOLLOW | O_DIRECTORY, 0);
+			struct file *file = file = ksu_filp_open_nonotify(pos->dirpath, O_RDONLY | O_NOFOLLOW | O_NOATIME | O_DIRECTORY);
 			if (IS_ERR(file)) {
 				pr_err("Failed to open directory: %s, err: %ld\n", pos->dirpath, PTR_ERR(file));
 				goto skip_iterate;
@@ -189,7 +189,7 @@ static noinline void search_manager(const char *path, int depth, struct list_hea
 					goto skip_iterate;
 				}
 			}
-				
+
 			if (ksu_get_magic(file) != data_app_magic) {
 				pr_info("%s: skip: %s magic: 0x%lx expected: 0x%lx\n", __func__, pos->dirpath, ksu_get_magic(file), data_app_magic);
 				filp_close(file, NULL);
@@ -365,12 +365,13 @@ test_list:
 		pr_info("throne_tracker: rename not finished! retry!\n");
 
 	msleep(20); // yield
-	goto test_list;	
+	goto test_list;
 
 start_tt:
 	// lessen that window where user opens manager right away, yet its not crowned
 	set_user_nice(current, -10);
 
+	// this in exchange of override creds, we escape this whole thread.
 	escape_to_root_forced();
 	throne_tracker_fn(prune_only);
 
@@ -387,7 +388,7 @@ void track_throne(bool prune_only)
 first_run:
 	if (guarded_mutex_lock(&throne_tracker_mutex))
 		throne_tracker_fn(prune_only);
-	
+
 	label = &&threaded;
 	return;
 threaded:
