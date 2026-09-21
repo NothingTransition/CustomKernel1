@@ -1,4 +1,4 @@
-name: Build Flashable Kernel (miatoll) - KSU-Next 3.3.0
+name: Build Flashable Kernel (miatoll) - KSU-Next 3.3.0 - LLVM
 
 on:
   workflow_dispatch:
@@ -15,93 +15,67 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: miatoll-flashable-${{ github.ref }}
+  group: miatoll-llvm-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 1 }
 
-      - name: Install deps
+      - name: Install deps + latest LLVM
         run: |
           sudo apt-get update
-          sudo apt-get install -y bc bison flex libssl-dev libelf-dev build-essential ccache libncurses-dev git zip unzip rsync python3
-
-      - name: Clone toolchains
-        run: |
-          [ -f clang/bin/clang ] || git clone --depth=1 https://github.com/crdroidandroid/android_prebuilts_clang_host_linux-x86_clang-6443078 clang
-          [ -f gcc64/bin/aarch64-linux-android-as ] || git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 gcc64
-          [ -f gcc32/bin/arm-linux-androideabi-as ] || git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 gcc32
-          clang/bin/clang --version | head -n1
-          gcc64/bin/aarch64-linux-android-gcc --version | head -n1
+          sudo apt-get install -y bc bison flex libssl-dev libelf-dev build-essential ccache libncurses-dev git zip unzip rsync python3 clang lld llvm gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi
+          clang --version | head -n1
+          ld.lld --version | head -n1
+          llvm-ar --version | head -n1
+          aarch64-linux-gnu-gcc --version | head -n1
 
       - name: Defconfig
         run: |
           rm -rf out && mkdir -p out
-          make O=out ARCH=arm64 vendor/xiaomi/miatoll_defconfig
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 vendor/xiaomi/miatoll_defconfig
           grep -E "CONFIG_KSU|CONFIG_KPROBES|CONFIG_EROFS" out/.config | head -n 20
 
-      - name: Build
+      - name: Build with LLVM (latest clang)
         run: |
-          export PATH="$PWD/clang/bin:$PWD/gcc32/bin:$PWD/gcc64/bin:$PATH"
           export LC_ALL=C
-          time make -j$(nproc) O=out ARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=$PWD/gcc64/bin/aarch64-linux-android- CROSS_COMPILE_ARM32=$PWD/gcc32/bin/arm-linux-androideabi- LD=ld.lld CONFIG_NO_ERROR_ON_MISMATCH=y 2>&1 | tee build.log
+          time make -j$(nproc) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 2>&1 | tee build.log
           echo "=== BUILD DONE ==="
-          ls -lh out/arch/arm64/boot/Image* out/arch/arm64/boot/dtb* out/arch/arm64/boot/dtbo* 2>&1 | head -n 30
+          ls -lh out/arch/arm64/boot/Image* out/arch/arm64/boot/dtb* out/arch/arm64/boot/dtbo* 2>&1 | head -n 40
           ls -lh out/vmlinux 2>&1 | head -n 5
-          du -h out/arch/arm64/boot/ | tail -n 5
+          du -h out/arch/arm64/boot/ | tail -n 10
 
-      - name: Verify flashable files exist and are REAL size
+      - name: Verify Image is REAL (>5M)
         run: |
           set -e
-          echo "Verifying Image size..."
           ls -lh out/arch/arm64/boot/Image.gz out/arch/arm64/boot/Image 2>&1 | head -n 20
           SZ=$(stat -c%s out/arch/arm64/boot/Image.gz 2>/dev/null || stat -c%s out/arch/arm64/boot/Image 2>/dev/null || echo 0)
-          echo "Image size bytes=$SZ"
-          if [ "$SZ" -lt 5000000 ]; then
-            echo "ERROR: Image too small (<5M), build broken! Dumping boot dir:"
-            ls -lhR out/arch/arm64/boot/ | head -n 100
-            du -h out/ | tail -n 20
-            echo "build.log tail:"
-            tail -n 200 build.log
-            exit 1
-          fi
-          echo "Image size OK: $SZ bytes"
-          test -s out/vmlinux && echo "vmlinux OK $(ls -lh out/vmlinux | awk '{print $5}')"
+          echo "Image size=$SZ"
+          [ "$SZ" -ge 5000000 ] || { echo "FAIL Image <5M"; ls -lhR out/arch/arm64/boot/ | head -n 100; tail -n 200 build.log; exit 1; }
+          echo "OK"
 
-      - name: Package FLASHABLE zip (AnyKernel3)
+      - name: Package FLASHABLE (AnyKernel3)
         run: |
           set -x
           TANGGAL=$(date +"%Y%m%d-%H%M")
           echo "TANGGAL=$TANGGAL" >> $GITHUB_ENV
-          echo "TANGGAL=$TANGGAL" > /tmp/tanggal
           rm -rf package artifacts && mkdir -p package artifacts
-          # Use repo's AnyKernel3 - this is device-specific for miatoll
-          rsync -a --exclude='.git' AnyKernel3/ package/ 2>&1 | head -n 20
+          rsync -a --exclude='.git' AnyKernel3/ package/
           ls -lh package/ | head -n 20
-          # Copy kernel
-          if [ -f out/arch/arm64/boot/Image.gz ]; then cp -v out/arch/arm64/boot/Image.gz package/; else gzip -c out/arch/arm64/boot/Image > package/Image.gz; fi
-          # Ensure Image.gz is there and is LARGE
+          cp -v out/arch/arm64/boot/Image.gz package/ || { gzip -c out/arch/arm64/boot/Image > package/Image.gz; }
           ls -lh package/Image.gz
-          SZ=$(stat -c%s package/Image.gz)
-          echo "package/Image.gz size=$SZ"
-          if [ "$SZ" -lt 5000000 ]; then echo "FATAL: package Image.gz too small!"; ls -lh package/; exit 1; fi
-          # Create flashable zip - THIS IS WHAT YOU FLASH IN TWRP
+          SZ=$(stat -c%s package/Image.gz); echo "package Image.gz $SZ"; [ "$SZ" -ge 5000000 ] || { echo "package Image too small"; exit 1; }
           (cd package && zip -r9 ../artifacts/Stormbreaker-miatoll-KSU-Next-v3.3.0-${TANGGAL}-FLASHABLE.zip . 2>&1 | head -n 50)
           ls -lh artifacts/ | head -n 30
-          du -h artifacts/ | tail -n 5
-          SZ2=$(stat -c%s artifacts/Stormbreaker*.zip)
-          echo "Flashable zip size=$SZ2"
-          if [ "$SZ2" -lt 7000000 ]; then echo "ERROR: Flashable zip too small (<7M), expected ~15-30M"; ls -lhR package/ | head -n 50; exit 1; fi
-          # Also copy raw files to artifacts for debugging
-          cp -v out/arch/arm64/boot/Image.gz artifacts/ 2>&1 | head -n 5 || cp -v out/arch/arm64/boot/Image artifacts/ || true
-          cp -v out/vmlinux artifacts/ 2>&1 | head -n 5 || true
+          SZ2=$(stat -c%s artifacts/Stormbreaker*.zip); echo "zip $SZ2"; [ "$SZ2" -ge 7000000 ] || { echo "zip too small"; exit 1; }
+          cp -v out/arch/arm64/boot/Image.gz artifacts/ || true
           cp build.log artifacts/ || true
-          ls -lh artifacts/ | head -n 30
+          ls -lh artifacts/
 
       - name: Upload FLASHABLE
         uses: actions/upload-artifact@v4
@@ -114,9 +88,8 @@ jobs:
       - name: Summary
         if: always()
         run: |
-          echo "### ✅ Flashable Kernel Ready" >> $GITHUB_STEP_SUMMARY
-          echo "- Flash this in TWRP/OrangeFox/SKED: \`artifacts/Stormbreaker-miatoll-KSU-Next-*.zip\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Device: miatoll (curtana/excalibur/gram/joyeuse), block=boot" >> $GITHUB_STEP_SUMMARY
-          echo "- KSU-Next 3.3.0 kprobe, EROFS, BPF" >> $GITHUB_STEP_SUMMARY
+          echo "### ✅ Flashable LLVM Build Ready" >> $GITHUB_STEP_SUMMARY
+          echo "- Toolchain: ubuntu-24.04 LLVM (latest clang) + aarch64-linux-gnu-gcc" >> $GITHUB_STEP_SUMMARY
+          echo "- Flash: artifacts/Stormbreaker-*.zip via TWRP/OrangeFox" >> $GITHUB_STEP_SUMMARY
           ls -lh artifacts/ 2>&1 | head -n 30 >> $GITHUB_STEP_SUMMARY || true
           ls -lh out/arch/arm64/boot/Image* 2>&1 | head -n 20 >> $GITHUB_STEP_SUMMARY || true
