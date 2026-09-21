@@ -3,8 +3,8 @@
 This directory vendors the kernel component from:
 
 - Repository: https://github.com/backslashxx/KernelSU
-- Tag: `v3.3.0`
-- Commit: `ca313a6aacdf54a82ced7a23627386f231bd3340`
+- Tag: `v3.3.0-39`
+- Commit: `1d867429705d0aec7051667913c22d16237db312`
 
 It is integrated in-tree for the Linux 4.14 non-GKI Miatoll kernel. The
 scope-minimized manual hooks are based on backslashxx/KernelSU issue #5,
