@@ -133,33 +133,63 @@ jobs:
 
       - name: Package AnyKernel3
         run: |
+          set -x
           TANGGAL=$(date +"%Y%m%d-%H")
           echo "TANGGAL=$TANGGAL" >> $GITHUB_ENV
+          echo "=== Package step: TANGGAL=$TANGGAL ==="
+          ls -lh out/arch/arm64/boot/ || true
+          echo "=== Checking Image files ==="
+          ls -lh out/arch/arm64/boot/Image* || true
+          # Ensure AnyKernel clean
+          rm -rf AnyKernel || true
+          echo "=== Cloning AnyKernel3 ==="
+          if ! git clone --depth=1 https://github.com/Amritorock/AnyKernel3 -b r5x AnyKernel 2>&1; then
+            echo "Amritorock r5x clone failed, trying osm0sis master"
+            git clone --depth=1 https://github.com/osm0sis/AnyKernel3 AnyKernel 2>&1 | head -n 30
+          fi
+          ls -lh AnyKernel/ | head -n 50
+          echo "=== Copying kernel image ==="
           if [ -f out/arch/arm64/boot/Image.gz ]; then
             echo "Packaging Image.gz"
-            rm -rf AnyKernel
-            git clone --depth=1 https://github.com/Amritorock/AnyKernel3 -b r5x AnyKernel
-            cp out/arch/arm64/boot/Image.gz AnyKernel/
-            # also copy dtb if exists
-            find out/arch/arm64/boot -name "*.dtb" -exec cp {} AnyKernel/ \; 2>&1 | head -n 20 || true
-            cd AnyKernel
-            zip -r9 ../Stormbreaker-miatoll-${TANGGAL}-KSU-Next-v3.3.0.zip * 2>&1 | tail -n 20
-            cd ..
-            ls -lh Stormbreaker*.zip
+            cp -v out/arch/arm64/boot/Image.gz AnyKernel/ || { echo "cp Image.gz failed"; exit 1; }
+            find out/arch/arm64/boot -name "*.dtb" -exec cp -v {} AnyKernel/ \; 2>&1 | head -n 20 || true
           elif [ -f out/arch/arm64/boot/Image ]; then
             echo "Image.gz missing, packaging Image"
-            rm -rf AnyKernel
-            git clone --depth=1 https://github.com/Amritorock/AnyKernel3 -b r5x AnyKernel
-            cp out/arch/arm64/boot/Image AnyKernel/
-            gzip -c out/arch/arm64/boot/Image > AnyKernel/Image.gz
-            cd AnyKernel
-            zip -r9 ../Stormbreaker-miatoll-${TANGGAL}-KSU-Next-v3.3.0.zip * 2>&1 | tail -n 20
-            cd ..
-            ls -lh Stormbreaker*.zip
+            cp -v out/arch/arm64/boot/Image AnyKernel/ || { echo "cp Image failed"; exit 1; }
+            gzip -c out/arch/arm64/boot/Image > AnyKernel/Image.gz || { echo "gzip failed"; exit 1; }
+            ls -lh AnyKernel/Image* || true
           else
             echo "No bootable image found!"
+            ls -R out/arch/arm64/boot/ || true
             exit 1
           fi
+          echo "=== AnyKernel contents ==="
+          ls -lh AnyKernel/ | head -n 50
+          echo "=== Creating zip ==="
+          cd AnyKernel
+          # Use zip, fallback to tar if zip fails, and ensure we don't include .git
+          rm -rf .git || true
+          ls -lh | head -n 30
+          if zip -r9 ../Stormbreaker-miatoll-${TANGGAL}-KSU-Next-v3.3.0.zip * 2>&1 | tee /tmp/zip.log; then
+            echo "zip succeeded"
+          else
+            ZIP_RC=$?
+            echo "zip failed with $ZIP_RC, log:"
+            cat /tmp/zip.log || true
+            echo "Trying tar fallback"
+            tar czf ../Stormbreaker-miatoll-${TANGGAL}-KSU-Next-v3.3.0.tar.gz * 2>&1 | head -n 20 || true
+            # also try zip with different options
+            zip -r9 ../Stormbreaker-miatoll-${TANGGAL}-KSU-Next-v3.3.0.zip . -x "*.git*" 2>&1 | head -n 30 || true
+          fi
+          cd ..
+          echo "=== Result ==="
+          ls -lh Stormbreaker* 2>&1 | head -n 20
+          ls -lh AnyKernel/Image* 2>&1 | head -n 20 || true
+          if ! ls Stormbreaker* 1>/dev/null 2>&1; then
+            echo "No Stormbreaker archive created!"
+            exit 1
+          fi
+          echo "Package step completed successfully"
 
       - name: Upload kernel artifact
         uses: actions/upload-artifact@v4
