@@ -75,12 +75,46 @@ jobs:
         run: |
           set -euo pipefail
 
-          archive_url="https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/${AOSP_CLANG_COMMIT}/${AOSP_CLANG_REVISION}.tar.gz"
-          mkdir clang
-          curl --fail --location --retry 3 "$archive_url" | tar -xz -C clang
+          # The complete AOSP prebuilt also contains LLDB, Windows/musl
+          # runtimes, Python, and Android userspace libraries. Fetch only the
+          # pinned compiler, LLVM binutils, host libraries, and Clang resource
+          # headers needed for a kernel build.
+          git init -q aosp-clang
+          git -C aosp-clang remote add origin \
+            https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86
+          git -C aosp-clang sparse-checkout init --no-cone
+          cat >aosp-clang/.git/info/sparse-checkout <<EOF
+          /${AOSP_CLANG_REVISION}/AndroidVersion.txt
+          /${AOSP_CLANG_REVISION}/bin/clang
+          /${AOSP_CLANG_REVISION}/bin/clang++
+          /${AOSP_CLANG_REVISION}/bin/lld
+          /${AOSP_CLANG_REVISION}/bin/llvm-ar
+          /${AOSP_CLANG_REVISION}/bin/llvm-nm
+          /${AOSP_CLANG_REVISION}/bin/llvm-objcopy
+          /${AOSP_CLANG_REVISION}/bin/llvm-objdump
+          /${AOSP_CLANG_REVISION}/bin/llvm-readobj
+          /${AOSP_CLANG_REVISION}/lib/clang/23/include/
+          /${AOSP_CLANG_REVISION}/lib/libLLVM.so
+          /${AOSP_CLANG_REVISION}/lib/libc++.so.1
+          /${AOSP_CLANG_REVISION}/lib/libc++abi.so.1
+          /${AOSP_CLANG_REVISION}/lib/x86_64-unknown-linux-gnu/libc++.so
+          /${AOSP_CLANG_REVISION}/lib/x86_64-unknown-linux-gnu/libc++.so.1
+          /${AOSP_CLANG_REVISION}/lib/x86_64-unknown-linux-gnu/libc++abi.so
+          /${AOSP_CLANG_REVISION}/lib/x86_64-unknown-linux-gnu/libc++abi.so.1
+          EOF
+          git -C aosp-clang -c protocol.version=2 fetch --depth=1 \
+            --filter=blob:none origin "$AOSP_CLANG_COMMIT"
+          git -C aosp-clang checkout -q --detach FETCH_HEAD
+          mv "aosp-clang/$AOSP_CLANG_REVISION" clang
+          rm -rf aosp-clang
+
+          ln -s lld clang/bin/ld.lld
+          ln -s llvm-readobj clang/bin/llvm-readelf
+          ln -s llvm-objcopy clang/bin/llvm-strip
 
           grep -Fxq "$AOSP_CLANG_VERSION" clang/AndroidVersion.txt
           test -x clang/bin/clang
+          du -sh clang
           toolchain_bin="$PWD/clang/bin"
           echo "TOOLCHAIN_BIN=$toolchain_bin" >> "$GITHUB_ENV"
           echo "$toolchain_bin" >> "$GITHUB_PATH"
