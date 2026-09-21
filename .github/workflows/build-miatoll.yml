@@ -41,9 +41,6 @@ concurrency:
 env:
   ARCH: arm64
   DEFCONFIG: vendor/xiaomi/miatoll_defconfig
-  AOSP_CLANG_REVISION: clang-r614150
-  AOSP_CLANG_VERSION: 23.0.1
-  AOSP_CLANG_COMMIT: 52b3c04ccd487048aaaabd0b99fd42618012fb65
 
 jobs:
   build:
@@ -59,7 +56,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            bc bison build-essential ccache flex git kmod libelf-dev \
+            bc bison ccache clang flex git kmod libelf-dev libc6-dev lld llvm make \
             libssl-dev python3 rsync zip
 
       - name: Restore compiler cache
@@ -70,84 +67,21 @@ jobs:
           restore-keys: |
             miatoll-ccache-${{ runner.os }}-
 
-      - name: Fetch pinned AOSP Clang/LLVM toolchain
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          # The complete AOSP prebuilt also contains LLDB, Windows/musl
-          # runtimes, Python, and Android userspace libraries. Fetch only the
-          # pinned compiler, LLVM binutils, host libraries, and Clang resource
-          # headers needed for a kernel build.
-          git init -q aosp-clang
-          git -C aosp-clang remote add origin \
-            https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86
-          git -C aosp-clang sparse-checkout init --no-cone
-          cat >aosp-clang/.git/info/sparse-checkout <<EOF
-          /${AOSP_CLANG_REVISION}/AndroidVersion.txt
-          /${AOSP_CLANG_REVISION}/bin/clang
-          /${AOSP_CLANG_REVISION}/bin/clang++
-          /${AOSP_CLANG_REVISION}/bin/lld
-          /${AOSP_CLANG_REVISION}/bin/llvm-ar
-          /${AOSP_CLANG_REVISION}/bin/llvm-nm
-          /${AOSP_CLANG_REVISION}/bin/llvm-objcopy
-          /${AOSP_CLANG_REVISION}/bin/llvm-objdump
-          /${AOSP_CLANG_REVISION}/bin/llvm-readobj
-          /${AOSP_CLANG_REVISION}/lib/clang/23/include/
-          /${AOSP_CLANG_REVISION}/lib/libLLVM.so
-          /${AOSP_CLANG_REVISION}/lib/libc++.so.1
-          /${AOSP_CLANG_REVISION}/lib/libc++abi.so.1
-          /${AOSP_CLANG_REVISION}/lib/x86_64-unknown-linux-gnu/libc++.so
-          /${AOSP_CLANG_REVISION}/lib/x86_64-unknown-linux-gnu/libc++.so.1
-          /${AOSP_CLANG_REVISION}/lib/x86_64-unknown-linux-gnu/libc++abi.so
-          /${AOSP_CLANG_REVISION}/lib/x86_64-unknown-linux-gnu/libc++abi.so.1
-          EOF
-          git -C aosp-clang -c protocol.version=2 fetch --depth=1 \
-            --filter=blob:none origin "$AOSP_CLANG_COMMIT"
-          git -C aosp-clang checkout -q --detach FETCH_HEAD
-          mv "aosp-clang/$AOSP_CLANG_REVISION" clang
-          rm -rf aosp-clang
-
-          ln -s lld clang/bin/ld.lld
-          ln -s llvm-readobj clang/bin/llvm-readelf
-          ln -s llvm-objcopy clang/bin/llvm-strip
-
-          grep -Fxq "$AOSP_CLANG_VERSION" clang/AndroidVersion.txt
-          test -x clang/bin/clang
-          du -sh clang
-          toolchain_bin="$PWD/clang/bin"
-          echo "TOOLCHAIN_BIN=$toolchain_bin" >> "$GITHUB_ENV"
-          echo "$toolchain_bin" >> "$GITHUB_PATH"
-
       - name: Verify LLVM toolchain
         shell: bash
         run: |
           set -euo pipefail
           {
-            echo "AOSP revision: $AOSP_CLANG_REVISION"
-            echo "AOSP prebuilt commit: $AOSP_CLANG_COMMIT"
+            echo "Toolchain source: Ubuntu 24.04 LLVM"
             clang --version
             ld.lld --version
             llvm-ar --version
             llvm-nm --version
             llvm-objcopy --version
+            for tool in clang clang++ ld.lld llvm-ar llvm-nm llvm-objcopy llvm-objdump llvm-readelf llvm-strip; do
+              command -v "$tool"
+            done
           } | tee toolchain-info.txt
-
-          for tool in clang clang++ ld.lld llvm-ar llvm-nm llvm-objcopy llvm-objdump llvm-readelf llvm-strip; do
-            if resolved="$(command -v "$tool")"; then
-              echo "$tool=$resolved" | tee -a toolchain-info.txt
-            else
-              echo "$tool is not shipped by this LLVM distribution" | tee -a toolchain-info.txt
-            fi
-          done
-
-          # Kbuild resolves every compiler/binutils command through the pinned
-          # directory placed first in GITHUB_PATH. Assert the tools this build
-          # actually requires without rejecting an otherwise complete archive
-          # for an unused convenience frontend.
-          for tool in clang ld.lld llvm-ar llvm-nm llvm-objcopy llvm-objdump; do
-            test -x "$TOOLCHAIN_BIN/$tool"
-          done
 
       - name: Generate and verify Miatoll configuration
         shell: bash
@@ -246,8 +180,7 @@ jobs:
           {
             echo "commit=${GITHUB_SHA}"
             echo "kernel.release=$(cat kernel.release)"
-            echo "toolchain.revision=$AOSP_CLANG_REVISION"
-            echo "toolchain.commit=$AOSP_CLANG_COMMIT"
+            echo "toolchain.source=ubuntu-24.04-llvm"
             clang --version | head -n 1 | sed 's/^/clang.version=/'
             ld.lld --version | head -n 1 | sed 's/^/lld.version=/'
             grep -E '^(CONFIG_KSU|CONFIG_EROFS_FS|CONFIG_NTFS_FS|CONFIG_BPF_SYSCALL|CONFIG_MODULE_SIG_FORCE)' out/.config || true
