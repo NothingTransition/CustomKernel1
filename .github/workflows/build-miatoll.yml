@@ -1,0 +1,215 @@
+name: Build Miatoll Kernel
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - arena/01a0bfbb-customkernel1
+    paths:
+      - ".github/workflows/build-miatoll.yml"
+      - "arch/**"
+      - "block/**"
+      - "certs/**"
+      - "crypto/**"
+      - "drivers/**"
+      - "firmware/**"
+      - "fs/**"
+      - "include/**"
+      - "init/**"
+      - "ipc/**"
+      - "kernel/**"
+      - "lib/**"
+      - "mm/**"
+      - "net/**"
+      - "scripts/**"
+      - "security/**"
+      - "sound/**"
+      - "techpack/**"
+      - "usr/**"
+      - "virt/**"
+      - "Makefile"
+      - "Kbuild"
+      - "Kconfig"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: miatoll-kernel-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ARCH: arm64
+  DEFCONFIG: vendor/xiaomi/miatoll_defconfig
+  CLANG_COMMIT: 40fb9b651e8e6a4429e7de7a93467fa27dc9e6b2
+  GCC64_COMMIT: 5e030eafe024784a73cdf47e6936ac0dbfc763dc
+  GCC32_COMMIT: 111258a10e017f067b27e6cfcea7619d753f3309
+
+jobs:
+  build:
+    name: Compile and verify
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout kernel source
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison build-essential ccache flex git kmod libelf-dev \
+            libssl-dev python3 rsync zip
+
+      - name: Restore compiler cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: miatoll-ccache-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            miatoll-ccache-${{ runner.os }}-
+
+      - name: Fetch pinned Android toolchains
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          fetch_toolchain() {
+            local directory="$1"
+            local repository="$2"
+            local commit="$3"
+
+            git init -q "$directory"
+            git -C "$directory" remote add origin "$repository"
+            git -C "$directory" fetch --depth=1 origin "$commit"
+            git -C "$directory" checkout -q --detach FETCH_HEAD
+            test "$(git -C "$directory" rev-parse HEAD)" = "$commit"
+          }
+
+          fetch_toolchain clang \
+            https://github.com/crdroidandroid/android_prebuilts_clang_host_linux-x86_clang-6443078.git \
+            "$CLANG_COMMIT"
+          fetch_toolchain gcc64 \
+            https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9.git \
+            "$GCC64_COMMIT"
+          fetch_toolchain gcc32 \
+            https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9.git \
+            "$GCC32_COMMIT"
+
+          clang/bin/clang --version | head -n 2
+
+      - name: Generate and verify Miatoll configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$PWD/clang/bin:$PWD/gcc64/bin:$PWD/gcc32/bin:$PATH"
+
+          make O=out ARCH=arm64 CC=clang \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE="$PWD/gcc64/bin/aarch64-linux-android-" \
+            CROSS_COMPILE_ARM32="$PWD/gcc32/bin/arm-linux-androideabi-" \
+            LD=ld.lld "$DEFCONFIG"
+
+          require_config() {
+            grep -qx "$1" out/.config || {
+              echo "Required configuration missing: $1" >&2
+              exit 1
+            }
+          }
+
+          require_config 'CONFIG_KSU=y'
+          if grep -q '^CONFIG_KSU_KPROBES_KSUD=y' out/.config; then
+            echo 'Kprobe hooks must remain disabled for manual integration' >&2
+            exit 1
+          fi
+          require_config '# CONFIG_KSU_HACK_ARM64_BRANCH_LINK is not set'
+          require_config '# CONFIG_KSU_TAMPER_SYSCALL_TABLE is not set'
+          require_config 'CONFIG_KSU_LSM_SECURITY_HOOKS=y'
+          require_config '# CONFIG_KPROBES is not set'
+          require_config 'CONFIG_EROFS_FS=y'
+          require_config 'CONFIG_EROFS_FS_ZIP=y'
+          require_config 'CONFIG_EROFS_FS_SECURITY=y'
+          require_config 'CONFIG_NTFS_FS=y'
+          require_config 'CONFIG_NTFS_RW=y'
+          require_config 'CONFIG_BPF_SYSCALL=y'
+          require_config 'CONFIG_BPF_JIT=y'
+          require_config 'CONFIG_CGROUP_BPF=y'
+          require_config '# CONFIG_MODULE_SIG_FORCE is not set'
+
+      - name: Build kernel, DTB, DTBO and modules
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="$PWD/clang/bin:$PWD/gcc64/bin:$PWD/gcc32/bin:$PATH"
+          export USE_CCACHE=1
+          export CCACHE_DIR="$HOME/.cache/ccache"
+          export KBUILD_BUILD_USER=github-actions
+          export KBUILD_BUILD_HOST=kernel-ci
+          ccache --max-size=5G
+
+          make -j"$(nproc)" O=out ARCH=arm64 CC='ccache clang' \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE="$PWD/gcc64/bin/aarch64-linux-android-" \
+            CROSS_COMPILE_ARM32="$PWD/gcc32/bin/arm-linux-androideabi-" \
+            LD=ld.lld
+
+      - name: Verify build products and KernelSU linkage
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          test -s out/arch/arm64/boot/Image.gz
+          test -s out/arch/arm64/boot/dtb.img
+          test -s out/arch/arm64/boot/dtbo.img
+          test -s out/arch/arm64/boot/dts/qcom/curtana-atoll-ab-idp-overlay.dtbo
+          test -s out/drivers/kernelsu/ksu.o
+
+          NM="$PWD/gcc64/bin/aarch64-linux-android-nm"
+          "$NM" out/vmlinux | grep -q ' ksu_handle_execveat$'
+          "$NM" out/vmlinux | grep -q ' ksu_handle_sys_reboot$'
+          "$NM" out/vmlinux | grep -q ' kernelsu_init$'
+
+          make -s O=out ARCH=arm64 kernelrelease | tee kernel.release
+          sha256sum \
+            out/arch/arm64/boot/Image.gz \
+            out/arch/arm64/boot/dtb.img \
+            out/arch/arm64/boot/dtbo.img | tee SHA256SUMS
+
+          {
+            echo "commit=${GITHUB_SHA}"
+            echo "kernel.release=$(cat kernel.release)"
+            grep -E '^(CONFIG_KSU|CONFIG_EROFS_FS|CONFIG_NTFS_FS|CONFIG_BPF_SYSCALL|CONFIG_MODULE_SIG_FORCE)' out/.config || true
+          } | tee build-info.txt
+
+      - name: Package AnyKernel3
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf package artifacts
+          mkdir -p package artifacts/modules
+          rsync -a \
+            --exclude='.gitignore' \
+            --exclude='README.md' \
+            --exclude='placeholder' \
+            AnyKernel3/ package/
+          cp out/arch/arm64/boot/Image.gz package/
+
+          (
+            cd package
+            zip -r9 ../artifacts/CustomKernel1-miatoll-KernelSU-${GITHUB_RUN_NUMBER}.zip .
+          )
+
+          find out -type f -name '*.ko' -exec cp --parents '{}' artifacts/modules/ \;
+          cp kernel.release SHA256SUMS build-info.txt artifacts/
+          cp out/arch/arm64/boot/{Image.gz,dtb.img,dtbo.img} artifacts/
+          sha256sum artifacts/CustomKernel1-*.zip >> artifacts/SHA256SUMS
+
+      - name: Upload kernel artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: miatoll-kernel-${{ github.run_number }}
+          path: artifacts/
+          if-no-files-found: error
+          compression-level: 9
+          retention-days: 14
