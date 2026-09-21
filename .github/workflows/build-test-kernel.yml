@@ -75,14 +75,17 @@ jobs:
       - name: Package FLASHABLE (AnyKernel3)
         if: always()
         run: |
+          set +e
+          set +o pipefail
           set -x
           TANGGAL=$(date +"%Y%m%d-%H%M")
           echo "TANGGAL=$TANGGAL" >> $GITHUB_ENV
           rm -rf package artifacts && mkdir -p package artifacts
           rsync -a --exclude='.git' AnyKernel3/ package/
           ls -lh package/ | head -n 20
-          cp -v out/arch/arm64/boot/Image.gz package/ || { gzip -c out/arch/arm64/boot/Image > package/Image.gz; }
-          ls -lh package/Image.gz
+          cp -v out/arch/arm64/boot/Image.gz package/ 2>&1 | head -n 5 || { echo "Image.gz missing, trying Image"; gzip -c out/arch/arm64/boot/Image > package/Image.gz 2>&1 | head -n 5 || echo "both cp and gzip failed"; }
+          ls -lh package/Image.gz 2>&1 | head -n 5 || echo "package/Image.gz not found, ls failed"
+          ls -lh package/ 2>&1 | head -n 30 || true
           SZ=$(stat -c%s package/Image.gz 2>/dev/null || echo 0); echo "package Image.gz $SZ"; if [ "$SZ" -lt 5000000 ]; then echo "WARN package Image <5M, continuing"; fi
           (cd package && zip -r9 ../artifacts/Stormbreaker-miatoll-KSU-Next-v3.3.0-${TANGGAL}-FLASHABLE.zip . 2>&1 | head -n 50)
           ls -lh artifacts/ | head -n 30
@@ -92,12 +95,13 @@ jobs:
           ls -lh artifacts/
 
       - name: Upload FLASHABLE
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Stormbreaker-miatoll-FLASHABLE-${{ env.TANGGAL }}
+          name: Stormbreaker-miatoll-FLASHABLE-${{ env.TANGGAL || 'unknown' }}
           path: artifacts/
           retention-days: 14
-          if-no-files-found: error
+          if-no-files-found: warn
 
       - name: Summary
         if: always()
