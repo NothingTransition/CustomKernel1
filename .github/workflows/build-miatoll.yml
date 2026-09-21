@@ -166,9 +166,12 @@ jobs:
           test -s out/arch/arm64/boot/dts/qcom/curtana-atoll-ab-idp-overlay.dtbo
           test -s out/drivers/kernelsu/ksu.o
 
-          llvm-nm out/vmlinux | grep -q ' ksu_handle_execveat$'
-          llvm-nm out/vmlinux | grep -q ' ksu_handle_sys_reboot$'
-          llvm-nm out/vmlinux | grep -q ' kernelsu_init$'
+          # Write once instead of piping llvm-nm into grep -q: with pipefail,
+          # grep's early exit makes llvm-nm report EPIPE (exit 74).
+          llvm-nm out/vmlinux > vmlinux.sym
+          grep -q ' ksu_handle_execveat$' vmlinux.sym
+          grep -q ' ksu_handle_sys_reboot$' vmlinux.sym
+          grep -q ' kernelsu_init$' vmlinux.sym
 
           make -s O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- kernelrelease | tee kernel.release
