@@ -769,7 +769,7 @@ static void avc_audit_post_callback(struct audit_buffer *ab, void *a)
 
 
 #ifdef CONFIG_KSU_SUSFS
-bool susfs_is_avc_log_spoofing_enabled;
+extern bool susfs_is_avc_log_spoofing_enabled;
 #endif
 
 /* This is the slow part of avc audit with big stack footprint */
