@@ -130,4 +130,81 @@ config KSU_HEURISTIC_IN_TREE_BUILD
 	depends on KSU
 	default y
 
+menu "KernelSU - SUSFS"
+	depends on KSU
+
+config KSU_SUSFS
+	bool "SUSFS support"
+	default n
+	help
+	  Enable the SUSFS filesystem-hiding compatibility layer. This legacy
+	  Linux 4.14 implementation reports SUSFS v1.5.5.
+
+config KSU_SUSFS_SUS_PATH
+	bool "Hide configured paths"
+	depends on KSU_SUSFS
+	default y
+
+config KSU_SUSFS_SUS_MOUNT
+	bool "Hide configured mounts"
+	depends on KSU_SUSFS
+	default y
+
+config KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT
+	bool "Automatically hide KernelSU mounts"
+	depends on KSU_SUSFS_SUS_MOUNT
+	default n
+
+config KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT
+	bool "Automatically hide bind mounts"
+	depends on KSU_SUSFS_SUS_MOUNT
+	default n
+
+config KSU_SUSFS_SUS_KSTAT
+	bool "Spoof configured file metadata"
+	depends on KSU_SUSFS
+	default y
+
+config KSU_SUSFS_SUS_OVERLAYFS
+	bool "Automatically spoof overlayfs metadata"
+	depends on KSU_SUSFS
+	default n
+
+config KSU_SUSFS_TRY_UMOUNT
+	bool "Support SUSFS try-umount entries"
+	depends on KSU_SUSFS
+	default y
+
+config KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT
+	bool "Automatically add bind mounts to try-umount"
+	depends on KSU_SUSFS_TRY_UMOUNT
+	default n
+
+config KSU_SUSFS_SPOOF_UNAME
+	bool "Spoof uname"
+	depends on KSU_SUSFS
+	default y
+
+config KSU_SUSFS_ENABLE_LOG
+	bool "Allow SUSFS kernel logging"
+	depends on KSU_SUSFS
+	default y
+
+config KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
+	bool "Hide KernelSU and SUSFS symbols from kallsyms"
+	depends on KSU_SUSFS
+	default y
+
+config KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
+	bool "Spoof /proc/cmdline"
+	depends on KSU_SUSFS
+	default y
+
+config KSU_SUSFS_OPEN_REDIRECT
+	bool "Redirect configured open paths"
+	depends on KSU_SUSFS
+	default y
+
+endmenu
+
 endmenu

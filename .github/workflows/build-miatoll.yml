@@ -105,6 +105,15 @@ jobs:
           require_config '# CONFIG_KSU_HACK_ARM64_BRANCH_LINK is not set'
           require_config '# CONFIG_KSU_TAMPER_SYSCALL_TABLE is not set'
           require_config 'CONFIG_KSU_LSM_SECURITY_HOOKS=y'
+          require_config 'CONFIG_KSU_SUSFS=y'
+          require_config 'CONFIG_KSU_SUSFS_SUS_PATH=y'
+          require_config 'CONFIG_KSU_SUSFS_SUS_MOUNT=y'
+          require_config 'CONFIG_KSU_SUSFS_SUS_KSTAT=y'
+          require_config 'CONFIG_KSU_SUSFS_TRY_UMOUNT=y'
+          require_config 'CONFIG_KSU_SUSFS_SPOOF_UNAME=y'
+          require_config 'CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y'
+          require_config 'CONFIG_KSU_SUSFS_OPEN_REDIRECT=y'
+          require_config 'CONFIG_NOMOUNT=y'
           require_config '# CONFIG_KPROBES is not set'
           require_config 'CONFIG_EROFS_FS=y'
           require_config 'CONFIG_EROFS_FS_ZIP=y'
@@ -165,6 +174,8 @@ jobs:
           test -s out/arch/arm64/boot/dtbo.img
           test -s out/arch/arm64/boot/dts/qcom/curtana-atoll-ab-idp-overlay.dtbo
           test -s out/drivers/kernelsu/ksu.o
+          test -s out/fs/susfs.o
+          test -s out/fs/nomount/nomount.o
 
           # Write once instead of piping llvm-nm into grep -q: with pipefail,
           # grep's early exit makes llvm-nm report EPIPE (exit 74).
@@ -172,6 +183,8 @@ jobs:
           grep -q ' ksu_handle_execveat$' vmlinux.sym
           grep -q ' ksu_handle_sys_reboot$' vmlinux.sym
           grep -q ' kernelsu_init$' vmlinux.sym
+          grep -q ' susfs_handle_prctl$' vmlinux.sym
+          grep -q ' nomount_init$' vmlinux.sym
 
           make -s O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- kernelrelease | tee kernel.release
@@ -186,7 +199,7 @@ jobs:
             echo "toolchain.source=ubuntu-24.04-llvm"
             clang --version | head -n 1 | sed 's/^/clang.version=/'
             ld.lld --version | head -n 1 | sed 's/^/lld.version=/'
-            grep -E '^(CONFIG_KSU|CONFIG_EROFS_FS|CONFIG_NTFS_FS|CONFIG_BPF_SYSCALL|CONFIG_MODULE_SIG_FORCE)' out/.config || true
+            grep -E '^(CONFIG_KSU|CONFIG_NOMOUNT|CONFIG_EROFS_FS|CONFIG_NTFS_FS|CONFIG_BPF_SYSCALL|CONFIG_MODULE_SIG_FORCE)' out/.config || true
           } | tee build-info.txt
 
       - name: Package AnyKernel3

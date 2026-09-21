@@ -19,6 +19,9 @@
 #endif // MODULE
 
 #include "kernel_includes.h"
+#ifdef CONFIG_KSU_SUSFS
+#include <linux/susfs.h>
+#endif
 
 // uapi
 #include "include/uapi/app_profile.h"
@@ -237,6 +240,10 @@ static int __init kernelsu_init(void)
 	}
 
 	ksu_feature_init();
+
+#ifdef CONFIG_KSU_SUSFS
+	susfs_init();
+#endif
 
 	ksu_supercalls_init();
 
