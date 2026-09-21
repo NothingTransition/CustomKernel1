@@ -1,4 +1,4 @@
-name: Build Test Kernel (miatoll) - KSU-Next 3.3.0
+name: Build Test Kernel (miatoll) - KSU-Next 3.3.0 - Flashable
 
 on:
   workflow_dispatch:
@@ -25,6 +25,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: miatoll-flashable-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-22.04
@@ -40,7 +44,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y bc bison flex libssl-dev libelf-dev \
             build-essential ccache libncurses-dev \
-            git zip unzip curl wget python3
+            git zip unzip curl wget python3 rsync
 
       - name: Set up ccache
         run: |
@@ -50,13 +54,11 @@ jobs:
 
       - name: Clone toolchains (clang + gcc)
         run: |
-          # clang 6443078 (as in build.sh)
           if [ ! -f clang/bin/clang ]; then
             echo "Cloning clang..."
             git clone --depth=1 https://github.com/crdroidandroid/android_prebuilts_clang_host_linux-x86_clang-6443078 clang
           fi
           clang/bin/clang --version || true
-
           if [ ! -f gcc64/bin/aarch64-linux-android-as ]; then
             echo "Cloning gcc64..."
             git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 gcc64
@@ -88,7 +90,6 @@ jobs:
           rm -rf out
           mkdir -p out
           make O=out ARCH=arm64 $DEFCONFIG
-          # verify KSU is enabled
           grep -E "CONFIG_KSU|CONFIG_KPROBES|CONFIG_EROFS" out/.config | head -n 30
           echo "--- .config KSU ---"
           grep CONFIG_KSU out/.config || echo "KSU not found"
@@ -125,7 +126,8 @@ jobs:
           ls -lh out/arch/arm64/boot/Image* 2>&1 | head -n 20
           file out/arch/arm64/boot/Image 2>&1 | head -n 20
           file out/arch/arm64/boot/Image.gz 2>&1 | head -n 20
-          # quick check for KSU string in Image
+          ls -lh out/arch/arm64/boot/dtb* out/arch/arm64/boot/dtbo* 2>&1 | head -n 20 || true
+          find out/arch/arm64/boot -type f 2>&1 | xargs ls -lh 2>&1 | head -n 30 || true
           strings out/arch/arm64/boot/Image.gz 2>&1 | grep -i "kernelsu\|KSU" | head -n 20 || echo "KSU string not in gz (expected compressed)"
           strings out/arch/arm64/boot/Image 2>&1 | grep -i "kernelsu" | head -n 20 || echo "Check vmlinux"
           strings out/vmlinux 2>&1 | grep -i "kernelsu" | head -n 20 || echo "no KSU string in vmlinux (maybe stripped)"
@@ -153,21 +155,20 @@ jobs:
           echo "" | tee -a /tmp/sizes.txt
           echo "AnyKernel3 repo:" | tee -a /tmp/sizes.txt
           ls -lh AnyKernel3/ 2>&1 | tee -a /tmp/sizes.txt
+          du -h AnyKernel3/ 2>&1 | tee -a /tmp/sizes.txt
           echo "" | tee -a /tmp/sizes.txt
           echo "build.log tail:" | tee -a /tmp/sizes.txt
           tail -n 50 build.log 2>&1 | tee -a /tmp/sizes.txt
           echo "" | tee -a /tmp/sizes.txt
           echo "=== END SIZES ===" | tee -a /tmp/sizes.txt
           cat /tmp/sizes.txt
-          # also write to summary
           echo "### Debug Sizes" >> $GITHUB_STEP_SUMMARY || true
           cat /tmp/sizes.txt >> $GITHUB_STEP_SUMMARY || true
           cp /tmp/sizes.txt ./sizes.txt || true
 
-      - name: Package AnyKernel3
+      - name: Package flashable AnyKernel3 (proper)
         shell: bash
         run: |
-          # Think double: disable errexit/pipefail for this step, handle errors manually
           set +e
           set +o pipefail
           set -x
@@ -175,140 +176,98 @@ jobs:
           TANGGAL=$(date +"%Y%m%d-%H")
           echo "TANGGAL=$TANGGAL" >> $GITHUB_ENV
           echo "TANGGAL=$TANGGAL" > /tmp/tanggal.txt
-          echo "=== Package step: TANGGAL=$TANGGAL ==="
-          pwd || true
-          df -h || true
+          echo "=== FLASHABLE Package: TANGGAL=$TANGGAL ==="
+          pwd
+          df -h | head -n 20
           ls -lh out/arch/arm64/boot/ || true
-          echo "=== Checking Image files ==="
-          ls -lh out/arch/arm64/boot/Image* 2>&1 || true
-          ls -lh out/arch/arm64/boot/ 2>&1 || true
-          # Prefer repo's AnyKernel3 (already has device-specific anykernel.sh), fallback to clone
-          rm -rf AnyKernel || true
+
+          # Clean
+          rm -rf package artifacts AnyKernel || true
+          mkdir -p package artifacts
+
+          # Use repo's AnyKernel3 (device-specific for miatoll) - this is the flashable base
           if [ -d AnyKernel3 ]; then
-            echo "Using repo's AnyKernel3"
-            cp -a AnyKernel3 AnyKernel 2>&1 || { echo "cp -a failed"; }
-            rm -rf AnyKernel/.git 2>&1 || true
+            echo "Using repo's AnyKernel3 as base"
+            rsync -a --exclude='.git' --exclude='.gitignore' AnyKernel3/ package/ 2>&1 | head -n 20 || cp -a AnyKernel3/* package/ 2>&1 | head -n 20 || true
+            ls -lh package/ | head -n 30
           else
-            echo "Repo AnyKernel3 not found, cloning"
-            rm -rf /tmp/package_clone.log || true
-            if ! git clone --depth=1 https://github.com/Amritorock/AnyKernel3 -b r5x AnyKernel > /tmp/package_clone.log 2>&1; then
-              echo "Amritorock r5x clone failed, log:"
-              cat /tmp/package_clone.log || true
-              echo "Trying osm0sis master"
-              rm -rf AnyKernel || true
-              if ! git clone --depth=1 https://github.com/osm0sis/AnyKernel3 AnyKernel > /tmp/package_clone.log 2>&1; then
-                echo "osm0sis clone also failed"
-                cat /tmp/package_clone.log || true
-                echo "Trying Amritorock without branch"
-                rm -rf AnyKernel || true
-                git clone --depth=1 https://github.com/Amritorock/AnyKernel3 AnyKernel > /tmp/package_clone.log 2>&1 || true
-                cat /tmp/package_clone.log || true
-              fi
-            fi
-            echo "=== clone log ==="
-            cat /tmp/package_clone.log 2>&1 | head -n 50 || true
+            echo "Repo AnyKernel3 missing, cloning fallback"
+            git clone --depth=1 https://github.com/Amritorock/AnyKernel3 -b r5x package 2>&1 | head -n 20
           fi
-          ls -lh AnyKernel/ 2>&1 | head -n 80 || true
-          if [ ! -d AnyKernel ]; then
-            echo "AnyKernel directory missing after clone attempts!"
-            ls -R . 2>&1 | head -n 100 || true
-            # fallback: create minimal AnyKernel structure
-            mkdir -p AnyKernel/META-INF/com/google/android || true
-            echo "Created minimal AnyKernel fallback"
-            cat > AnyKernel/anykernel.sh << 'AK'
-          # Dummy anykernel for testing
-          properties() { }
-          block=/dev/block/bootdevice/by-name/boot;
-          is_slot_device=0;
-          ramdisk_compression=auto;
-          patch_vbmeta_flag=auto;
-          AK
-            cat > AnyKernel/tools/ak3-core.sh << 'AK2'
-          # dummy
-          AK2
-          fi
-          echo "=== Copying kernel image ==="
+
+          # Copy kernel Image
           if [ -f out/arch/arm64/boot/Image.gz ]; then
-            echo "Packaging Image.gz"
-            cp -v out/arch/arm64/boot/Image.gz AnyKernel/ 2>&1 || { echo "cp Image.gz failed"; }
-            ls -lh AnyKernel/Image.gz 2>&1 || true
-            # also copy dtb/dtbo if they exist (like other workflow)
-            for f in out/arch/arm64/boot/dtb.img out/arch/arm64/boot/dtbo.img out/arch/arm64/boot/dts/qcom/*.dtbo; do
-              if [ -f "$f" ]; then echo "Copying $f"; cp -v "$f" AnyKernel/ 2>&1 || true; fi
-            done
-            find out/arch/arm64/boot -name "*.dtb" -exec cp -v {} AnyKernel/ \; 2>&1 | head -n 20 || true
+            echo "Copying Image.gz"
+            cp -v out/arch/arm64/boot/Image.gz package/ || echo "cp Image.gz failed"
           elif [ -f out/arch/arm64/boot/Image ]; then
-            echo "Image.gz missing, packaging Image"
-            cp -v out/arch/arm64/boot/Image AnyKernel/ 2>&1 || { echo "cp Image failed"; }
-            gzip -c out/arch/arm64/boot/Image > AnyKernel/Image.gz 2>&1 || { echo "gzip failed"; }
-            ls -lh AnyKernel/Image* 2>&1 || true
-            for f in out/arch/arm64/boot/dtb.img out/arch/arm64/boot/dtbo.img; do [ -f "$f" ] && cp -v "$f" AnyKernel/ || true; done
+            echo "Image.gz missing, gzipping Image"
+            gzip -c out/arch/arm64/boot/Image > package/Image.gz && ls -lh package/Image.gz || echo "gzip failed"
           else
-            echo "No bootable image found!"
-            ls -R out/arch/arm64/boot/ 2>&1 | head -n 100 || true
-            echo "Will still try to package whatever exists"
+            echo "No Image found!"
+            ls -R out/arch/arm64/boot/ | head -n 100
           fi
-          echo "=== AnyKernel contents ==="
-          ls -lh AnyKernel/ 2>&1 | head -n 100 || true
-          ls -R AnyKernel 2>&1 | head -n 200 || true
-          echo "=== Creating zip ==="
-          # Ensure we are in AnyKernel parent dir
-          if [ -d AnyKernel ]; then
-            cd AnyKernel || true
+
+          # Also copy dtb/dtbo if they exist (like 28M build) - flashable needs them on some setups
+          # But for AnyKernel3, Image.gz alone is enough; these are optional
+          for f in out/arch/arm64/boot/dtb.img out/arch/arm64/boot/dtbo.img; do
+            if [ -s "$f" ]; then echo "Copying $f to package and artifacts"; cp -v "$f" package/ 2>&1 | head -n 5; cp -v "$f" artifacts/ 2>&1 | head -n 5 || true; fi
+          done
+          # qcom dtbos
+          if ls out/arch/arm64/boot/dts/qcom/*.dtbo 1>/dev/null 2>&1; then
+            ls -lh out/arch/arm64/boot/dts/qcom/*.dtbo | head -n 20
+            # AnyKernel3 doesn't need them separately, but keep for artifacts
+            mkdir -p artifacts/dts 2>&1 || true
+            cp -v out/arch/arm64/boot/dts/qcom/*.dtbo artifacts/dts/ 2>&1 | head -n 20 || true
+          fi
+
+          echo "=== package contents ==="
+          ls -lh package/ | head -n 100
+          du -h package/ | tail -n 20
+          ls -lh package/Image* 2>&1 | head -n 20
+
+          # Create flashable zip from package (this is what you flash in recovery)
+          echo "=== Creating flashable zip ==="
+          (
+            cd package
+            # remove .git if any
             rm -rf .git 2>&1 || true
-            ls -lh 2>&1 | head -n 50 || true
-            echo "pwd=$(pwd) ls:"
-            ls -1 2>&1 | head -n 50 || true
-            # zip: use explicit file list to avoid '*' empty issues, and handle hidden files
-            # Prefer zip, but capture status correctly without pipefail
-            set +e
-            echo "Running zip..."
-            zip -r9 ../Stormbreaker-miatoll-${TANGGAL}-KSU-Next-v3.3.0.zip *  > /tmp/zip.log 2>&1
-            ZIP_RC=$?
-            echo "zip exit code $ZIP_RC"
-            cat /tmp/zip.log 2>&1 | head -n 100 || true
-            if [ $ZIP_RC -ne 0 ]; then
-              echo "zip with * failed, trying zip with . and excluding .git"
-              zip -r9 ../Stormbreaker-miatoll-${TANGGAL}-KSU-Next-v3.3.0.zip . -x "*.git*" > /tmp/zip2.log 2>&1
-              ZIP_RC2=$?
-              echo "zip2 exit $ZIP_RC2"
-              cat /tmp/zip2.log 2>&1 | head -n 100 || true
-            fi
-            if [ ! -f ../Stormbreaker-miatoll-${TANGGAL}-KSU-Next-v3.3.0.zip ]; then
-              echo "zip still not created, trying tar.gz fallback"
-              tar czf ../Stormbreaker-miatoll-${TANGGAL}-KSU-Next-v3.3.0.tar.gz * 2>&1 | head -n 20 || true
-              ls -lh ../Stormbreaker* 2>&1 | head -n 20 || true
-              # also create an empty zip as fallback to not fail job
-              if [ -f ../Stormbreaker-miatoll-${TANGGAL}-KSU-Next-v3.3.0.tar.gz ]; then
-                cp ../Stormbreaker-miatoll-${TANGGAL}-KSU-Next-v3.3.0.tar.gz ../Stormbreaker-miatoll-${TANGGAL}-KSU-Next-v3.3.0.zip 2>&1 || true
-              fi
-            fi
-            cd .. 2>&1 || true
-          else
-            echo "AnyKernel directory not found, cannot zip"
+            ls -1 | head -n 30
+            zip -r9 ../artifacts/Stormbreaker-miatoll-KSU-Next-v3.3.0-${TANGGAL}.zip . 2>&1 | tee /tmp/zip.log | head -n 100
+            echo "zip exit: ${PIPESTATUS[0]}"
+          )
+          cat /tmp/zip.log 2>&1 | tail -n 50 || true
+          ls -lh artifacts/Stormbreaker*.zip 2>&1 | head -n 20
+          du -h artifacts/Stormbreaker*.zip 2>&1 | head -n 20
+
+          # Also prepare artifacts folder like 28M build: copy raw images + metadata for debugging
+          echo "=== Preparing artifacts folder ==="
+          cp -v out/arch/arm64/boot/Image.gz artifacts/ 2>&1 | head -n 5 || cp -v out/arch/arm64/boot/Image artifacts/ 2>&1 | head -n 5 || true
+          # dtb already copied
+          find out -type f -name "*.ko" 2>&1 | head -n 20
+          find out -type f -name "*.ko" -exec cp --parents '{}' artifacts/ \; 2>&1 | head -n 20 || true
+          ls -lh artifacts/ 2>&1 | head -n 50
+          du -h artifacts/ 2>&1 | tail -n 20
+
+          # Fallback if zip not created
+          if [ ! -f artifacts/Stormbreaker-miatoll-KSU-Next-v3.3.0-${TANGGAL}.zip ]; then
+            echo "ZIP not created, fallback tar"
+            (cd package && tar czf ../artifacts/Stormbreaker-miatoll-KSU-Next-v3.3.0-${TANGGAL}.tar.gz . 2>&1 | head -n 20)
+            cp artifacts/*.tar.gz artifacts/Stormbreaker-miatoll-KSU-Next-v3.3.0-${TANGGAL}.zip 2>&1 || true
           fi
-          echo "=== Result ==="
-          ls -lh Stormbreaker* 2>&1 | head -n 30 || true
-          ls -lh AnyKernel/Image* 2>&1 | head -n 20 || true
-          cat /tmp/package.log 2>&1 | tail -n 100 || true
-          if ! ls Stormbreaker* 1>/dev/null 2>&1; then
-            echo "No Stormbreaker archive created! Creating dummy for artifact"
-            # create dummy so upload doesn't warn
-            touch Stormbreaker-miatoll-${TANGGAL}-KSU-Next-v3.3.0.zip 2>&1 || true
-            ls -lh Stormbreaker* 2>&1 | head -n 20 || true
-            # still report error but don't fail job - let upload happen
-            echo "WARNING: packaging produced dummy, but kernel Images still will be uploaded"
-          fi
-          echo "Package step completed (with manual error handling)"
-          # Copy tanggal to env is already done, also ensure build.log exists
-          ls -lh build.log 2>&1 | head -n 20 || true
-          # Ensure package log is preserved
+
+          ls -lh artifacts/ 2>&1 | head -n 50
+          echo "=== sizes ==="
+          ls -lh artifacts/Stormbreaker*.zip 2>&1 | head -n 20
+          du -h artifacts/ | tail -n 20
+          # preserve logs
           cp /tmp/package.log ./package.log 2>&1 || true
           cp /tmp/zip.log ./zip.log 2>&1 || true
-          ls -lh *.log 2>&1 | head -n 20 || true
-          echo "=== SIZES TXT ==="
-          ls -lh Stormbreaker* 2>&1 | head -n 20 || true
-          du -h Stormbreaker* 2>&1 | head -n 20 || true
+          cp /tmp/sizes.txt ./sizes.txt 2>&1 || true
+          cp build.log ./build.log 2>&1 || true
+          cp build.log artifacts/build.log 2>&1 || true
+          cp /tmp/sizes.txt artifacts/sizes.txt 2>&1 || true
+          cp package.log artifacts/package.log 2>&1 || true
+          ls -lh *.log *.txt artifacts/* 2>&1 | head -n 50 || true
 
       - name: Upload package logs (always)
         if: always()
@@ -318,38 +277,31 @@ jobs:
           path: |
             package.log
             zip.log
+            sizes.txt
             /tmp/package.log
             /tmp/zip.log
-            /tmp/package_clone.log
+            /tmp/sizes.txt
             build.log
           if-no-files-found: warn
           retention-days: 14
 
-      - name: Upload kernel artifact
+      - name: Upload flashable kernel artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Stormbreaker-miatoll-KSU-Next-${{ env.TANGGAL || 'fallback' }}
-          path: |
-            Stormbreaker*.zip
-            Stormbreaker*.tar.gz
-            out/arch/arm64/boot/Image*
-            out/arch/arm64/boot/dtb.img
-            out/arch/arm64/boot/dtbo.img
-            out/arch/arm64/boot/dts/qcom/*.dtbo
-            out/vmlinux
-            build.log
-            package.log
-            sizes.txt
-            /tmp/sizes.txt
+          name: Stormbreaker-miatoll-KSU-Next-${{ env.TANGGAL || 'fallback' }}-flashable
+          path: artifacts/
           if-no-files-found: warn
           retention-days: 14
 
       - name: Summary
+        if: always()
         run: |
-          echo "### Build Summary" >> $GITHUB_STEP_SUMMARY
-          echo "- Defconfig: ${{ inputs.defconfig || 'vendor/xiaomi/miatoll_defconfig' }}" >> $GITHUB_STEP_SUMMARY
-          echo "- KSU-Next: v3.3.0 (3b18216) bootable kprobe mode" >> $GITHUB_STEP_SUMMARY
-          echo "- EROFS/BPF/module-sig fixes included" >> $GITHUB_STEP_SUMMARY
-          echo "- Artifacts: Stormbreaker-miatoll-*.zip + Image/Image.gz + vmlinux" >> $GITHUB_STEP_SUMMARY
-          ls -lh Stormbreaker*.zip out/arch/arm64/boot/Image* 2>&1 | head -n 30 >> $GITHUB_STEP_SUMMARY || true
+          echo "### Build Summary - Flashable" >> $GITHUB_STEP_SUMMARY
+          echo "- Defconfig: vendor/xiaomi/miatoll_defconfig" >> $GITHUB_STEP_SUMMARY
+          echo "- KSU-Next: v3.3.0 (3b18216) kprobe mode, EROFS/BPF" >> $GITHUB_STEP_SUMMARY
+          echo "- Flashable zip: artifacts/Stormbreaker-miatoll-KSU-Next-*.zip (flash via TWRP/OrangeFox)" >> $GITHUB_STEP_SUMMARY
+          echo "- Block: /dev/block/bootdevice/by-name/boot" >> $GITHUB_STEP_SUMMARY
+          ls -lh artifacts/Stormbreaker*.zip 2>&1 | head -n 20 >> $GITHUB_STEP_SUMMARY || true
+          ls -lh out/arch/arm64/boot/Image* 2>&1 | head -n 20 >> $GITHUB_STEP_SUMMARY || true
+          cat /tmp/sizes.txt 2>&1 | head -n 100 >> $GITHUB_STEP_SUMMARY || true
