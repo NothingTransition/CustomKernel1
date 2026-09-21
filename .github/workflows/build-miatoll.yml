@@ -183,7 +183,8 @@ jobs:
           grep -q ' ksu_handle_execveat$' vmlinux.sym
           grep -q ' ksu_handle_sys_reboot$' vmlinux.sym
           grep -q ' kernelsu_init$' vmlinux.sym
-          grep -q ' susfs_handle_prctl$' vmlinux.sym
+          grep -q ' susfs_init$' vmlinux.sym
+          grep -q ' susfs_add_sus_map$' vmlinux.sym
           grep -q ' nomount_init$' vmlinux.sym
 
           make -s O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
