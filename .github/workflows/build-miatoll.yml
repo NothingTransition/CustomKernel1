@@ -86,6 +86,12 @@ jobs:
           clang_path="$(find "$PWD/clang" -path '*/bin/clang' -perm -u+x -print -quit)"
           test -n "$clang_path"
           toolchain_bin="$(dirname "$clang_path")"
+          # Neutron ships llvm-readobj but not an llvm-readelf alias. LLVM's
+          # readobj supports the readelf-compatible mode selected by argv[0].
+          if [ ! -e "$toolchain_bin/llvm-readelf" ]; then
+            test -x "$toolchain_bin/llvm-readobj"
+            ln -s llvm-readobj "$toolchain_bin/llvm-readelf"
+          fi
           echo "TOOLCHAIN_BIN=$toolchain_bin" >> "$GITHUB_ENV"
           echo "$toolchain_bin" >> "$GITHUB_PATH"
 
@@ -176,7 +182,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: miatoll-build-failure-${{ github.run_number }}
-          path: build.log
+          path: |
+            build.log
+            toolchain-info.txt
           if-no-files-found: ignore
           retention-days: 7
 
