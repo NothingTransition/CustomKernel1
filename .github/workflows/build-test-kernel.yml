@@ -1,31 +1,18 @@
-name: Build Test Kernel (miatoll) - KSU-Next 3.3.0 - Flashable
+name: Build Flashable Kernel (miatoll) - KSU-Next 3.3.0
 
 on:
   workflow_dispatch:
-    inputs:
-      defconfig:
-        description: 'Defconfig to build'
-        required: false
-        default: 'vendor/xiaomi/miatoll_defconfig'
-      make_args:
-        description: 'Extra make args'
-        required: false
-        default: ''
   push:
-    branches:
-      - arena/01a0c26a-customkernel1
+    branches: [arena/01a0c26a-customkernel1]
     paths:
       - 'arch/**'
       - 'drivers/**'
       - 'KernelSU-Next/**'
-      - 'fs/**'
-      - 'Makefile'
       - '.github/workflows/build-test-kernel.yml'
 
 permissions:
   contents: write
   pull-requests: write
-  issues: write
 
 concurrency:
   group: miatoll-flashable-${{ github.ref }}
@@ -34,300 +21,102 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-22.04
-    timeout-minutes: 180
+    timeout-minutes: 120
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 1 }
 
-      - name: Install dependencies
+      - name: Install deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y bc bison flex libssl-dev libelf-dev \
-            build-essential ccache libncurses-dev \
-            git zip unzip curl wget python3 rsync
+          sudo apt-get install -y bc bison flex libssl-dev libelf-dev build-essential ccache libncurses-dev git zip unzip rsync python3
 
-      - name: Set up ccache
+      - name: Clone toolchains
         run: |
-          ccache -M 50G || true
-          ccache -z || true
-          echo "CCACHE_DIR=$HOME/.ccache" >> $GITHUB_ENV
+          [ -f clang/bin/clang ] || git clone --depth=1 https://github.com/crdroidandroid/android_prebuilts_clang_host_linux-x86_clang-6443078 clang
+          [ -f gcc64/bin/aarch64-linux-android-as ] || git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 gcc64
+          [ -f gcc32/bin/arm-linux-androideabi-as ] || git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 gcc32
+          clang/bin/clang --version | head -n1
+          gcc64/bin/aarch64-linux-android-gcc --version | head -n1
 
-      - name: Clone toolchains (clang + gcc)
+      - name: Defconfig
         run: |
-          if [ ! -f clang/bin/clang ]; then
-            echo "Cloning clang..."
-            git clone --depth=1 https://github.com/crdroidandroid/android_prebuilts_clang_host_linux-x86_clang-6443078 clang
-          fi
-          clang/bin/clang --version || true
-          if [ ! -f gcc64/bin/aarch64-linux-android-as ]; then
-            echo "Cloning gcc64..."
-            git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 gcc64
-          fi
-          if [ ! -f gcc32/bin/arm-linux-androideabi-as ]; then
-            echo "Cloning gcc32..."
-            git clone --depth=1 https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 gcc32
-          fi
-          ls -lh clang/bin/clang gcc64/bin/aarch64-linux-android-gcc gcc32/bin/arm-linux-androideabi-gcc 2>&1 | head -n 20
+          rm -rf out && mkdir -p out
+          make O=out ARCH=arm64 vendor/xiaomi/miatoll_defconfig
+          grep -E "CONFIG_KSU|CONFIG_KPROBES|CONFIG_EROFS" out/.config | head -n 20
 
-      - name: Show kernel version and KSU
+      - name: Build
         run: |
-          echo "Kernel Makefile VERSION:"
-          head -n 10 Makefile | grep -E "VERSION|PATCHLEVEL|SUBLEVEL|EXTRAVERSION"
-          echo "--- KSU version ---"
-          cat KernelSU-Next/kernel/Makefile 2>/dev/null | head -n 20 || true
-          git -C KernelSU-Next log --oneline -3 2>&1 | head -n 20 || cat KernelSU-Next/kernel/Kconfig | head -n 20
-
-      - name: Build kernel (defconfig)
-        env:
-          ARCH: arm64
-          KBUILD_BUILD_HOST: android-build
-          KBUILD_BUILD_USER: kardebayan
-          USE_CCACHE: "1"
-        run: |
-          export LC_ALL=C
-          DEFCONFIG="${{ inputs.defconfig || 'vendor/xiaomi/miatoll_defconfig' }}"
-          echo "Building defconfig: $DEFCONFIG"
-          rm -rf out
-          mkdir -p out
-          make O=out ARCH=arm64 $DEFCONFIG
-          grep -E "CONFIG_KSU|CONFIG_KPROBES|CONFIG_EROFS" out/.config | head -n 30
-          echo "--- .config KSU ---"
-          grep CONFIG_KSU out/.config || echo "KSU not found"
-
-      - name: Compile kernel
-        env:
-          ARCH: arm64
-          KBUILD_BUILD_HOST: android-build
-          KBUILD_BUILD_USER: kardebayan
-          USE_CCACHE: "1"
-        run: |
-          export LC_ALL=C
           export PATH="$PWD/clang/bin:$PWD/gcc32/bin:$PWD/gcc64/bin:$PATH"
-          echo "Clang: $(clang/bin/clang --version | head -n1)"
-          echo "GCC64: $(gcc64/bin/aarch64-linux-android-gcc --version | head -n1)"
-          echo "LD: $(clang/bin/ld.lld --version | head -n1)"
-          time make -j$(nproc --all) O=out \
-            ARCH=arm64 \
-            CC="clang" \
-            CLANG_TRIPLE=aarch64-linux-gnu- \
-            CROSS_COMPILE="$PWD/gcc64/bin/aarch64-linux-android-" \
-            CROSS_COMPILE_ARM32="$PWD/gcc32/bin/arm-linux-androideabi-" \
-            LD=ld.lld \
-            CONFIG_NO_ERROR_ON_MISMATCH=y \
-            ${{ inputs.make_args }} 2>&1 | tee build.log
-          echo "--- build finished ---"
-          ls -lh out/arch/arm64/boot/ || true
-          ls -lh out/vmlinux* out/System.map 2>&1 | head -n 20
-          ccache -s || true
+          export LC_ALL=C
+          time make -j$(nproc) O=out ARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=$PWD/gcc64/bin/aarch64-linux-android- CROSS_COMPILE_ARM32=$PWD/gcc32/bin/arm-linux-androideabi- LD=ld.lld CONFIG_NO_ERROR_ON_MISMATCH=y 2>&1 | tee build.log
+          echo "=== BUILD DONE ==="
+          ls -lh out/arch/arm64/boot/Image* out/arch/arm64/boot/dtb* out/arch/arm64/boot/dtbo* 2>&1 | head -n 30
+          ls -lh out/vmlinux 2>&1 | head -n 5
+          du -h out/arch/arm64/boot/ | tail -n 5
 
-      - name: Check bootables
+      - name: Verify flashable files exist and are REAL size
         run: |
-          echo "Checking Image files..."
-          ls -lh out/arch/arm64/boot/Image* 2>&1 | head -n 20
-          file out/arch/arm64/boot/Image 2>&1 | head -n 20
-          file out/arch/arm64/boot/Image.gz 2>&1 | head -n 20
-          ls -lh out/arch/arm64/boot/dtb* out/arch/arm64/boot/dtbo* 2>&1 | head -n 20 || true
-          find out/arch/arm64/boot -type f 2>&1 | xargs ls -lh 2>&1 | head -n 30 || true
-          strings out/arch/arm64/boot/Image.gz 2>&1 | grep -i "kernelsu\|KSU" | head -n 20 || echo "KSU string not in gz (expected compressed)"
-          strings out/arch/arm64/boot/Image 2>&1 | grep -i "kernelsu" | head -n 20 || echo "Check vmlinux"
-          strings out/vmlinux 2>&1 | grep -i "kernelsu" | head -n 20 || echo "no KSU string in vmlinux (maybe stripped)"
-          grep -a "KernelSU" out/vmlinux 2>&1 | head -n 5 || true
+          set -e
+          echo "Verifying Image size..."
+          ls -lh out/arch/arm64/boot/Image.gz out/arch/arm64/boot/Image 2>&1 | head -n 20
+          SZ=$(stat -c%s out/arch/arm64/boot/Image.gz 2>/dev/null || stat -c%s out/arch/arm64/boot/Image 2>/dev/null || echo 0)
+          echo "Image size bytes=$SZ"
+          if [ "$SZ" -lt 5000000 ]; then
+            echo "ERROR: Image too small (<5M), build broken! Dumping boot dir:"
+            ls -lhR out/arch/arm64/boot/ | head -n 100
+            du -h out/ | tail -n 20
+            echo "build.log tail:"
+            tail -n 200 build.log
+            exit 1
+          fi
+          echo "Image size OK: $SZ bytes"
+          test -s out/vmlinux && echo "vmlinux OK $(ls -lh out/vmlinux | awk '{print $5}')"
 
-      - name: Debug sizes (why 2M? think double)
-        if: always()
-        shell: bash
+      - name: Package FLASHABLE zip (AnyKernel3)
         run: |
-          set +e
-          echo "=== DEBUG SIZES ===" | tee /tmp/sizes.txt
-          echo "out/arch/arm64/boot:" | tee -a /tmp/sizes.txt
-          ls -lh out/arch/arm64/boot/ 2>&1 | tee -a /tmp/sizes.txt
-          du -h out/arch/arm64/boot/ 2>&1 | tee -a /tmp/sizes.txt
-          echo "" | tee -a /tmp/sizes.txt
-          echo "out/vmlinux:" | tee -a /tmp/sizes.txt
-          ls -lh out/vmlinux* out/System.map 2>&1 | tee -a /tmp/sizes.txt
-          du -h out/vmlinux 2>&1 | tee -a /tmp/sizes.txt
-          echo "" | tee -a /tmp/sizes.txt
-          echo "out/drivers/kernelsu:" | tee -a /tmp/sizes.txt
-          ls -lh out/drivers/kernelsu/*.o 2>&1 | tee -a /tmp/sizes.txt
-          echo "" | tee -a /tmp/sizes.txt
-          echo "find all boot images:" | tee -a /tmp/sizes.txt
-          find out/arch/arm64/boot -type f 2>&1 | xargs ls -lh 2>&1 | tee -a /tmp/sizes.txt
-          echo "" | tee -a /tmp/sizes.txt
-          echo "AnyKernel3 repo:" | tee -a /tmp/sizes.txt
-          ls -lh AnyKernel3/ 2>&1 | tee -a /tmp/sizes.txt
-          du -h AnyKernel3/ 2>&1 | tee -a /tmp/sizes.txt
-          echo "" | tee -a /tmp/sizes.txt
-          echo "build.log tail:" | tee -a /tmp/sizes.txt
-          tail -n 50 build.log 2>&1 | tee -a /tmp/sizes.txt
-          echo "" | tee -a /tmp/sizes.txt
-          echo "=== END SIZES ===" | tee -a /tmp/sizes.txt
-          cat /tmp/sizes.txt
-          echo "### Debug Sizes" >> $GITHUB_STEP_SUMMARY || true
-          cat /tmp/sizes.txt >> $GITHUB_STEP_SUMMARY || true
-          cp /tmp/sizes.txt ./sizes.txt || true
-          # Also try to upload to transfer.sh for sandbox fetch (not blocked)
-          echo "Uploading sizes to transfer.sh..."
-          curl -s --upload-file /tmp/sizes.txt https://transfer.sh/sizes-$GITHUB_RUN_NUMBER.txt 2>&1 | tee -a /tmp/sizes.txt || true
-          cat /tmp/sizes.txt | head -n 5
-
-      - name: Post sizes to PR (so sandbox can read without blob)
-        if: always()
-        shell: bash
-        run: |
-          set +e
-          echo "Posting sizes to PR comment..."
-          # Use gh CLI with GITHUB_TOKEN
-          COMMENT_FILE=/tmp/pr_comment.txt
-          {
-            echo "### Debug sizes for run $GITHUB_RUN_NUMBER (commit $GITHUB_SHA)"
-            echo '```'
-            cat /tmp/sizes.txt 2>&1 | head -n 200
-            echo '```'
-            echo "Artifact sizes:"
-            gh api repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/artifacts --jq '.artifacts[] | "\(.name) \(.size_in_bytes) bytes"' 2>&1 | head -n 20 || true
-          } > $COMMENT_FILE
-          cat $COMMENT_FILE | head -n 100
-          gh pr comment ${{ github.event.pull_request.number || '1' }} --body-file $COMMENT_FILE 2>&1 | head -n 20 || echo "gh pr comment failed, trying issues"
-          gh api repos/$GITHUB_REPOSITORY/issues/1/comments -X POST -f body="$(cat $COMMENT_FILE)" 2>&1 | head -n 20 || true
-
-      - name: Package flashable AnyKernel3 (proper)
-        shell: bash
-        run: |
-          set +e
-          set +o pipefail
           set -x
-          exec > >(tee /tmp/package.log) 2>&1
-          TANGGAL=$(date +"%Y%m%d-%H")
+          TANGGAL=$(date +"%Y%m%d-%H%M")
           echo "TANGGAL=$TANGGAL" >> $GITHUB_ENV
-          echo "TANGGAL=$TANGGAL" > /tmp/tanggal.txt
-          echo "=== FLASHABLE Package: TANGGAL=$TANGGAL ==="
-          pwd
-          df -h | head -n 20
-          ls -lh out/arch/arm64/boot/ || true
+          echo "TANGGAL=$TANGGAL" > /tmp/tanggal
+          rm -rf package artifacts && mkdir -p package artifacts
+          # Use repo's AnyKernel3 - this is device-specific for miatoll
+          rsync -a --exclude='.git' AnyKernel3/ package/ 2>&1 | head -n 20
+          ls -lh package/ | head -n 20
+          # Copy kernel
+          if [ -f out/arch/arm64/boot/Image.gz ]; then cp -v out/arch/arm64/boot/Image.gz package/; else gzip -c out/arch/arm64/boot/Image > package/Image.gz; fi
+          # Ensure Image.gz is there and is LARGE
+          ls -lh package/Image.gz
+          SZ=$(stat -c%s package/Image.gz)
+          echo "package/Image.gz size=$SZ"
+          if [ "$SZ" -lt 5000000 ]; then echo "FATAL: package Image.gz too small!"; ls -lh package/; exit 1; fi
+          # Create flashable zip - THIS IS WHAT YOU FLASH IN TWRP
+          (cd package && zip -r9 ../artifacts/Stormbreaker-miatoll-KSU-Next-v3.3.0-${TANGGAL}-FLASHABLE.zip . 2>&1 | head -n 50)
+          ls -lh artifacts/ | head -n 30
+          du -h artifacts/ | tail -n 5
+          SZ2=$(stat -c%s artifacts/Stormbreaker*.zip)
+          echo "Flashable zip size=$SZ2"
+          if [ "$SZ2" -lt 7000000 ]; then echo "ERROR: Flashable zip too small (<7M), expected ~15-30M"; ls -lhR package/ | head -n 50; exit 1; fi
+          # Also copy raw files to artifacts for debugging
+          cp -v out/arch/arm64/boot/Image.gz artifacts/ 2>&1 | head -n 5 || cp -v out/arch/arm64/boot/Image artifacts/ || true
+          cp -v out/vmlinux artifacts/ 2>&1 | head -n 5 || true
+          cp build.log artifacts/ || true
+          ls -lh artifacts/ | head -n 30
 
-          # Clean
-          rm -rf package artifacts AnyKernel || true
-          mkdir -p package artifacts
-
-          # Use repo's AnyKernel3 (device-specific for miatoll) - this is the flashable base
-          if [ -d AnyKernel3 ]; then
-            echo "Using repo's AnyKernel3 as base"
-            rsync -a --exclude='.git' --exclude='.gitignore' AnyKernel3/ package/ 2>&1 | head -n 20 || cp -a AnyKernel3/* package/ 2>&1 | head -n 20 || true
-            ls -lh package/ | head -n 30
-          else
-            echo "Repo AnyKernel3 missing, cloning fallback"
-            git clone --depth=1 https://github.com/Amritorock/AnyKernel3 -b r5x package 2>&1 | head -n 20
-          fi
-
-          # Copy kernel Image
-          if [ -f out/arch/arm64/boot/Image.gz ]; then
-            echo "Copying Image.gz"
-            cp -v out/arch/arm64/boot/Image.gz package/ || echo "cp Image.gz failed"
-          elif [ -f out/arch/arm64/boot/Image ]; then
-            echo "Image.gz missing, gzipping Image"
-            gzip -c out/arch/arm64/boot/Image > package/Image.gz && ls -lh package/Image.gz || echo "gzip failed"
-          else
-            echo "No Image found!"
-            ls -R out/arch/arm64/boot/ | head -n 100
-          fi
-
-          # Also copy dtb/dtbo if they exist (like 28M build) - flashable needs them on some setups
-          # But for AnyKernel3, Image.gz alone is enough; these are optional
-          for f in out/arch/arm64/boot/dtb.img out/arch/arm64/boot/dtbo.img; do
-            if [ -s "$f" ]; then echo "Copying $f to package and artifacts"; cp -v "$f" package/ 2>&1 | head -n 5; cp -v "$f" artifacts/ 2>&1 | head -n 5 || true; fi
-          done
-          # qcom dtbos
-          if ls out/arch/arm64/boot/dts/qcom/*.dtbo 1>/dev/null 2>&1; then
-            ls -lh out/arch/arm64/boot/dts/qcom/*.dtbo | head -n 20
-            # AnyKernel3 doesn't need them separately, but keep for artifacts
-            mkdir -p artifacts/dts 2>&1 || true
-            cp -v out/arch/arm64/boot/dts/qcom/*.dtbo artifacts/dts/ 2>&1 | head -n 20 || true
-          fi
-
-          echo "=== package contents ==="
-          ls -lh package/ | head -n 100
-          du -h package/ | tail -n 20
-          ls -lh package/Image* 2>&1 | head -n 20
-
-          # Create flashable zip from package (this is what you flash in recovery)
-          echo "=== Creating flashable zip ==="
-          (
-            cd package
-            # remove .git if any
-            rm -rf .git 2>&1 || true
-            ls -1 | head -n 30
-            zip -r9 ../artifacts/Stormbreaker-miatoll-KSU-Next-v3.3.0-${TANGGAL}.zip . 2>&1 | tee /tmp/zip.log | head -n 100
-            echo "zip exit: ${PIPESTATUS[0]}"
-          )
-          cat /tmp/zip.log 2>&1 | tail -n 50 || true
-          ls -lh artifacts/Stormbreaker*.zip 2>&1 | head -n 20
-          du -h artifacts/Stormbreaker*.zip 2>&1 | head -n 20
-
-          # Also prepare artifacts folder like 28M build: copy raw images + metadata for debugging
-          echo "=== Preparing artifacts folder ==="
-          cp -v out/arch/arm64/boot/Image.gz artifacts/ 2>&1 | head -n 5 || cp -v out/arch/arm64/boot/Image artifacts/ 2>&1 | head -n 5 || true
-          # dtb already copied
-          find out -type f -name "*.ko" 2>&1 | head -n 20
-          find out -type f -name "*.ko" -exec cp --parents '{}' artifacts/ \; 2>&1 | head -n 20 || true
-          ls -lh artifacts/ 2>&1 | head -n 50
-          du -h artifacts/ 2>&1 | tail -n 20
-
-          # Fallback if zip not created
-          if [ ! -f artifacts/Stormbreaker-miatoll-KSU-Next-v3.3.0-${TANGGAL}.zip ]; then
-            echo "ZIP not created, fallback tar"
-            (cd package && tar czf ../artifacts/Stormbreaker-miatoll-KSU-Next-v3.3.0-${TANGGAL}.tar.gz . 2>&1 | head -n 20)
-            cp artifacts/*.tar.gz artifacts/Stormbreaker-miatoll-KSU-Next-v3.3.0-${TANGGAL}.zip 2>&1 || true
-          fi
-
-          ls -lh artifacts/ 2>&1 | head -n 50
-          echo "=== sizes ==="
-          ls -lh artifacts/Stormbreaker*.zip 2>&1 | head -n 20
-          du -h artifacts/ | tail -n 20
-          # preserve logs
-          cp /tmp/package.log ./package.log 2>&1 || true
-          cp /tmp/zip.log ./zip.log 2>&1 || true
-          cp /tmp/sizes.txt ./sizes.txt 2>&1 || true
-          cp build.log ./build.log 2>&1 || true
-          cp build.log artifacts/build.log 2>&1 || true
-          cp /tmp/sizes.txt artifacts/sizes.txt 2>&1 || true
-          cp package.log artifacts/package.log 2>&1 || true
-          ls -lh *.log *.txt artifacts/* 2>&1 | head -n 50 || true
-
-      - name: Upload package logs (always)
-        if: always()
+      - name: Upload FLASHABLE
         uses: actions/upload-artifact@v4
         with:
-          name: package-logs-${{ env.TANGGAL || 'unknown' }}
-          path: |
-            package.log
-            zip.log
-            sizes.txt
-            /tmp/package.log
-            /tmp/zip.log
-            /tmp/sizes.txt
-            build.log
-          if-no-files-found: warn
-          retention-days: 14
-
-      - name: Upload flashable kernel artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: Stormbreaker-miatoll-KSU-Next-${{ env.TANGGAL || 'fallback' }}-flashable
+          name: Stormbreaker-miatoll-FLASHABLE-${{ env.TANGGAL }}
           path: artifacts/
-          if-no-files-found: warn
           retention-days: 14
+          if-no-files-found: error
 
       - name: Summary
         if: always()
         run: |
-          echo "### Build Summary - Flashable" >> $GITHUB_STEP_SUMMARY
-          echo "- Defconfig: vendor/xiaomi/miatoll_defconfig" >> $GITHUB_STEP_SUMMARY
-          echo "- KSU-Next: v3.3.0 (3b18216) kprobe mode, EROFS/BPF" >> $GITHUB_STEP_SUMMARY
-          echo "- Flashable zip: artifacts/Stormbreaker-miatoll-KSU-Next-*.zip (flash via TWRP/OrangeFox)" >> $GITHUB_STEP_SUMMARY
-          echo "- Block: /dev/block/bootdevice/by-name/boot" >> $GITHUB_STEP_SUMMARY
-          ls -lh artifacts/Stormbreaker*.zip 2>&1 | head -n 20 >> $GITHUB_STEP_SUMMARY || true
+          echo "### ✅ Flashable Kernel Ready" >> $GITHUB_STEP_SUMMARY
+          echo "- Flash this in TWRP/OrangeFox/SKED: \`artifacts/Stormbreaker-miatoll-KSU-Next-*.zip\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Device: miatoll (curtana/excalibur/gram/joyeuse), block=boot" >> $GITHUB_STEP_SUMMARY
+          echo "- KSU-Next 3.3.0 kprobe, EROFS, BPF" >> $GITHUB_STEP_SUMMARY
+          ls -lh artifacts/ 2>&1 | head -n 30 >> $GITHUB_STEP_SUMMARY || true
           ls -lh out/arch/arm64/boot/Image* 2>&1 | head -n 20 >> $GITHUB_STEP_SUMMARY || true
-          cat /tmp/sizes.txt 2>&1 | head -n 100 >> $GITHUB_STEP_SUMMARY || true
