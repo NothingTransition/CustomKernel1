@@ -224,15 +224,9 @@ jobs:
           cp out/arch/arm64/boot/dtb.img package/dtb
           cp out/arch/arm64/boot/dtbo.img package/dtbo.img
 
-          # Loadable modules (if any) -> installed to /vendor/lib/modules
-          if find out -type f -name '*.ko' -print -quit | grep -q .; then
-            mkdir -p package/modules/vendor/lib/modules
-            find out -type f -name '*.ko' -exec cp {} package/modules/vendor/lib/modules/ \;
-            sed -i 's/^do.modules=.*/do.modules=1/' package/anykernel.sh
-            echo "modules included: $(ls package/modules/vendor/lib/modules | wc -l)"
-          else
-            echo "no loadable modules (all built-in) - do.modules stays 0"
-          fi
+          # No modules packaged: KSU/SUSFS/NoMount are fully built-in and the
+          # few defconfig =m leftovers (usb gspca, rmnet helpers) are not
+          # needed in the flashable zip. modules/ stays empty, do.modules=0.
 
           # keep ramdisk/ and patch/ dirs in the zip (empty is fine)
           mkdir -p package/ramdisk package/patch
@@ -246,7 +240,6 @@ jobs:
           # Raw images + metadata alongside the flashable zip
           cp kernel.release SHA256SUMS build-info.txt toolchain-info.txt artifacts/
           cp out/arch/arm64/boot/{Image.gz,dtb.img,dtbo.img} artifacts/
-          find out -type f -name '*.ko' -exec cp --parents '{}' artifacts/ \; || true
           sha256sum artifacts/Stormbreaker-miatoll-*.zip >> artifacts/SHA256SUMS
           unzip -l artifacts/Stormbreaker-miatoll-*.zip
 
