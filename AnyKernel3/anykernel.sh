@@ -1,6 +1,7 @@
 # AnyKernel3 Ramdisk Mod Script
 # osm0sis @ xda-developers
-# Configured for Xiaomi miatoll family (curtana/excalibur/gram/joyeuse), A/B slots
+# Configured for Xiaomi miatoll family (curtana/excalibur/gram/joyeuse),
+# A-only partitioning, boot header v2 (dtb inside boot image, LZ4 ramdisk)
 
 ## AnyKernel setup
 # begin properties
@@ -26,7 +27,7 @@ supported.patchlevels=
 
 # shell variables
 block=/dev/block/bootdevice/by-name/boot;
-is_slot_device=1;
+is_slot_device=0;
 ramdisk_compression=auto;
 patch_vbmeta_flag=auto;
 
