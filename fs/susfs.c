@@ -1172,6 +1172,12 @@ int susfs_open_redirect_spoof_do_proc_readlink(struct inode *inode, char *tmp_bu
 				return -ENAMETOOLONG;
 			}
 			strncpy(tmp_buf, entry->info.redirected_pathname, SUSFS_MAX_LEN_PATHNAME - 1);
+			/* entry strings are validated (NUL-terminated within
+			 * SUSFS_MAX_LEN_PATHNAME), but guarantee termination of the
+			 * caller buffer anyway so strlen(tmp_buf) cannot run into
+			 * uninitialized page data when the string is maximal-length.
+			 */
+			tmp_buf[SUSFS_MAX_LEN_PATHNAME - 1] = '\0';
 			srcu_read_unlock(&susfs_srcu_open_redirect, srcu_idx);
 			return 0;
 		}
