@@ -1,31 +1,32 @@
 # AnyKernel3 Ramdisk Mod Script
 # osm0sis @ xda-developers
+# Configured for Xiaomi miatoll family (curtana/excalibur/gram/joyeuse), A/B slots
 
 ## AnyKernel setup
 # begin properties
 properties() { '
-kernel.string=x
-kernel.compiler=x
-kernel.made=x
-kernel.version=x
-message.word=x
+kernel.string=Stormbreaker KernelSU (SUSFS v2.3.0 + NoMount v2.0.0)
+kernel.compiler=Clang/LLVM 18 (LLVM=1, no GCC)
+kernel.made=NothingTransition CI
+kernel.version=4.14.357-openela
+message.word=UNTESTED PRE-RELEASE. curtana / AOSP Infinity X target. Flash at your own risk.
 do.devicecheck=1
 do.modules=0
 do.systemless=1
 do.cleanup=1
 do.cleanuponabort=0
-device.name1=miatoll
-device.name2=curtana
-device.name3=excalibur
-device.name4=gram
-device.name5=joyeuse
+device.name1=curtana
+device.name2=excalibur
+device.name3=gram
+device.name4=joyeuse
+device.name5=miatoll
 supported.versions=
 supported.patchlevels=
 '; } # end properties
 
 # shell variables
 block=/dev/block/bootdevice/by-name/boot;
-is_slot_device=0;
+is_slot_device=1;
 ramdisk_compression=auto;
 patch_vbmeta_flag=auto;
 
@@ -44,21 +45,3 @@ set_perm_recursive 0 0 750 750 $ramdisk/init* $ramdisk/sbin;
 dump_boot;
 write_boot;
 ## end boot install
-
-
-# shell variables
-#block=vendor_boot;
-#is_slot_device=1;
-#ramdisk_compression=auto;
-#patch_vbmeta_flag=auto;
-
-# reset for vendor_boot patching
-#reset_ak;
-
-
-## AnyKernel vendor_boot install
-#split_boot; # skip unpack/repack ramdisk since we don't need vendor_ramdisk access
-
-#flash_boot;
-## end vendor_boot install
-

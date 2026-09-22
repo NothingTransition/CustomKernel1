@@ -7,6 +7,7 @@ on:
       - arena/01a0bfbb-customkernel1
     paths:
       - ".github/workflows/build-miatoll.yml"
+      - "AnyKernel3/**"
       - "arch/**"
       - "block/**"
       - "certs/**"
@@ -203,28 +204,51 @@ jobs:
             grep -E '^(CONFIG_KSU|CONFIG_NOMOUNT|CONFIG_EROFS_FS|CONFIG_NTFS_FS|CONFIG_BPF_SYSCALL|CONFIG_MODULE_SIG_FORCE)' out/.config || true
           } | tee build-info.txt
 
-      - name: Package AnyKernel3
+      - name: Package AnyKernel3 flashable zip
         shell: bash
         run: |
           set -euo pipefail
           rm -rf package artifacts
-          mkdir -p package artifacts/modules
+          mkdir -p artifacts
           rsync -a \
             --exclude='.gitignore' \
             --exclude='README.md' \
             --exclude='placeholder' \
             AnyKernel3/ package/
-          cp out/arch/arm64/boot/Image.gz package/
+
+          # Zip-root images consumed by AnyKernel3:
+          #  - Image.gz : kernel (magiskboot repack keeps the ROM's ramdisk)
+          #  - dtb      : written into the boot image dtb area (boot header v3)
+          #  - dtbo.img : flashed to the dtbo partition by write_boot
+          cp out/arch/arm64/boot/Image.gz package/Image.gz
+          cp out/arch/arm64/boot/dtb.img package/dtb
+          cp out/arch/arm64/boot/dtbo.img package/dtbo.img
+
+          # Loadable modules (if any) -> installed to /vendor/lib/modules
+          if find out -type f -name '*.ko' -print -quit | grep -q .; then
+            mkdir -p package/modules/vendor/lib/modules
+            find out -type f -name '*.ko' -exec cp {} package/modules/vendor/lib/modules/ \;
+            sed -i 's/^do.modules=.*/do.modules=1/' package/anykernel.sh
+            echo "modules included: $(ls package/modules/vendor/lib/modules | wc -l)"
+          else
+            echo "no loadable modules (all built-in) - do.modules stays 0"
+          fi
+
+          # keep ramdisk/ and patch/ dirs in the zip (empty is fine)
+          mkdir -p package/ramdisk package/patch
 
           (
             cd package
-            zip -r9 ../artifacts/CustomKernel1-miatoll-KernelSU-${GITHUB_RUN_NUMBER}.zip .
+            zip -r9 \
+              "../artifacts/Stormbreaker-miatoll-KSU-SUSFS-NoMount-UNTESTED-${GITHUB_RUN_NUMBER}.zip" .
           )
 
-          find out -type f -name '*.ko' -exec cp --parents '{}' artifacts/modules/ \;
+          # Raw images + metadata alongside the flashable zip
           cp kernel.release SHA256SUMS build-info.txt toolchain-info.txt artifacts/
           cp out/arch/arm64/boot/{Image.gz,dtb.img,dtbo.img} artifacts/
-          sha256sum artifacts/CustomKernel1-*.zip >> artifacts/SHA256SUMS
+          find out -type f -name '*.ko' -exec cp --parents '{}' artifacts/ \; || true
+          sha256sum artifacts/Stormbreaker-miatoll-*.zip >> artifacts/SHA256SUMS
+          unzip -l artifacts/Stormbreaker-miatoll-*.zip
 
       - name: Upload kernel artifacts
         uses: actions/upload-artifact@v4
@@ -233,4 +257,4 @@ jobs:
           path: artifacts/
           if-no-files-found: error
           compression-level: 9
-          retention-days: 14
+          retention-days: 90
