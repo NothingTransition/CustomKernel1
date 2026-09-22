@@ -251,3 +251,71 @@ jobs:
           if-no-files-found: error
           compression-level: 9
           retention-days: 90
+
+  release:
+    name: Publish untested pre-release
+    needs: build
+    if: success()
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout kernel source
+        uses: actions/checkout@v4
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: miatoll-kernel-${{ github.run_number }}
+          path: release-assets
+
+      - name: Fetch manager APK and companion modules
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL --retry 5 --retry-delay 5 \
+            -o release-assets/KernelSU-manager.apk \
+            "https://github.com/backslashxx/KernelSU/releases/download/v3.3.0-47/KernelSU_v3.3.0-47_32648-release.apk"
+          curl -fL --retry 5 --retry-delay 5 \
+            -o release-assets/BRENE-v0.0.68.zip \
+            "https://github.com/rrr333nnn333/BRENE/releases/download/v0.0.68/BRENE-v0.0.68.zip"
+          curl -fL --retry 5 --retry-delay 5 \
+            -o release-assets/NoMount-v2.0.0.zip \
+            "https://github.com/maxsteeel/nomount/releases/download/v2.0.0/NoMount-v2.0.0-release.zip"
+          # sanity: all three must be zip/apk archives
+          head -c2 release-assets/KernelSU-manager.apk | grep -q PK
+          head -c2 release-assets/BRENE-v0.0.68.zip | grep -q PK
+          head -c2 release-assets/NoMount-v2.0.0.zip | grep -q PK
+          ls -la release-assets/
+
+      - name: Prepare release notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo "> Built from commit \`${GITHUB_SHA}\` (run #${GITHUB_RUN_NUMBER}) on $(date -u '+%Y-%m-%d %H:%M UTC')."
+            echo
+          } > release-notes.md
+          cat RELEASE_NOTES_UNTESTED.md >> release-notes.md
+
+      - name: Create/replace pre-release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="untested-prerelease"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release delete "$TAG" --yes --cleanup-tag
+          fi
+          gh release create "$TAG" \
+            --prerelease \
+            --target "$GITHUB_SHA" \
+            --title "UNTESTED PRE-RELEASE — Stormbreaker KSU + SUSFS v2.3.0 + NoMount (curtana / Infinity X)" \
+            --notes-file release-notes.md \
+            release-assets/Stormbreaker-miatoll-*.zip \
+            release-assets/KernelSU-manager.apk \
+            release-assets/BRENE-v0.0.68.zip \
+            release-assets/NoMount-v2.0.0.zip
+          gh release view "$TAG" --json url --jq '.url'
