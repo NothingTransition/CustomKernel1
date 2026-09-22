@@ -137,7 +137,7 @@ config KSU_SUSFS
 	bool "SUSFS support"
 	default n
 	help
-	  Enable the SUSFS v2.2.0 non-GKI filesystem-hiding compatibility
+	  Enable the SUSFS v2.3.0 non-GKI filesystem-hiding compatibility
 	  layer and its KernelSU reboot-supercall userspace ABI.
 
 config KSU_SUSFS_SUS_PATH

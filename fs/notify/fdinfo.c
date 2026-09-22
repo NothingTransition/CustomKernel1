@@ -13,7 +13,7 @@
 #include <linux/seq_file.h>
 #include <linux/proc_fs.h>
 #include <linux/exportfs.h>
-#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+#ifdef CONFIG_KSU_SUSFS
 #include <linux/susfs_def.h>
 #endif
 #include "inotify/inotify.h"
@@ -101,7 +101,11 @@ static void inotify_fdinfo(struct seq_file *m, struct fsnotify_mark *mark)
 	ino = inode->i_ino;
 	dev = inode->i_sb->s_dev;
 #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
-	susfs_show_map_vma_spoofer(inode, &dev, &ino);
+	/* v2.3.0: SUS_KSTAT is effective for any app-uid process, independent of
+	 * whether the process was umounted.
+	 */
+	if (susfs_is_current_app_uid())
+		susfs_show_map_vma_spoofer(inode, &dev, &ino);
 	metadata_spoofed = ino != inode->i_ino || dev != inode->i_sb->s_dev;
 #endif
 	seq_printf(m, "inotify wd:%x ino:%lx sdev:%x mask:%x ignored_mask:0 ",
@@ -140,7 +144,8 @@ static void fanotify_fdinfo(struct seq_file *m, struct fsnotify_mark *mark)
 		ino = inode->i_ino;
 		dev = inode->i_sb->s_dev;
 #ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
-		susfs_show_map_vma_spoofer(inode, &dev, &ino);
+		if (susfs_is_current_app_uid())
+			susfs_show_map_vma_spoofer(inode, &dev, &ino);
 		metadata_spoofed = ino != inode->i_ino || dev != inode->i_sb->s_dev;
 #endif
 		seq_printf(m, "fanotify ino:%lx sdev:%x mflags:%x mask:%x ignored_mask:%x ",
