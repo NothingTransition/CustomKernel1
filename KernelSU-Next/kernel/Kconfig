@@ -1,0 +1,98 @@
+menu "KernelSU"
+
+config KSU
+	tristate "KernelSU function support"
+	depends on !CPU_BIG_ENDIAN
+	depends on SECURITY_SELINUX
+	select SECCOMP
+	default y
+	help
+	  Enable kernel-level root privileges on Android System.
+
+config KSU_DEBUG
+	bool "KernelSU debug mode"
+	depends on KSU
+	default n
+
+config KSU_DISABLE_MANAGER
+	bool "Disable KernelSU manager integration"
+	depends on KSU
+	default n
+
+config KSU_DISABLE_POLICY
+	bool "Disable KernelSU policy profiles"
+	depends on KSU
+	default n
+
+config KSU_X86_PATCH_SYSCALL_DISPATCHER
+	bool "Dynamically patch x64's hardened syscall dispatcher to support syscall hooks"
+	depends on KSU && X86_64
+	default n
+
+menu "KernelSU - SUSFS"
+config KSU_SUSFS
+    bool "KernelSU addon - SUSFS"
+    depends on KSU
+    depends on THREAD_INFO_IN_TASK
+    default y
+    help
+        Patch and Enable SUSFS v2.3.0 to kernel with KernelSU-Next v3.4.0
+
+config KSU_SUSFS_SUS_PATH
+    bool "Enable to hide suspicious path"
+    depends on KSU_SUSFS
+    default y
+
+config KSU_SUSFS_SUS_MOUNT
+    bool "Enable to hide suspicious mounts"
+    depends on KSU_SUSFS
+    default y
+
+config KSU_SUSFS_SUS_KSTAT
+    bool "Enable to spoof suspicious kstat"
+    depends on KSU_SUSFS
+    default y
+
+config KSU_SUSFS_TRY_UMOUNT
+    bool "Enable to use ksu's try_umount"
+    depends on KSU_SUSFS
+    default y
+
+config KSU_SUSFS_SPOOF_UNAME
+    bool "Enable to spoof uname"
+    depends on KSU_SUSFS
+    default y
+
+config KSU_SUSFS_ENABLE_LOG
+    bool "Enable logging susfs log to kernel"
+    depends on KSU_SUSFS
+    default y
+
+config KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
+    bool "Enable to automatically hide ksu and susfs symbols from /proc/kallsyms"
+    depends on KSU_SUSFS
+    default y
+
+config KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
+    bool "Enable to spoof /proc/bootconfig or /proc/cmdline"
+    depends on KSU_SUSFS
+    default y
+
+config KSU_SUSFS_OPEN_REDIRECT
+    bool "Enable to redirect a path to be opened with another path"
+    depends on KSU_SUSFS
+    default y
+
+config KSU_SUSFS_SUS_MAP
+    bool "Enable to hide some mmapped real file"
+    depends on KSU_SUSFS
+    default y
+
+config KSU_SUSFS_SUS_MEMFD
+    bool "Enable to hide or spoof suspicious memfd"
+    depends on KSU_SUSFS
+    default n
+
+endmenu
+
+endmenu
