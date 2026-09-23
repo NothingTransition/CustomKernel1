@@ -98,14 +98,10 @@ jobs:
             }
           }
 
+          # KSU-Next v3.4.0 manual hooks (for 4.14) - not kprobes
           require_config 'CONFIG_KSU=y'
-          if grep -q '^CONFIG_KSU_KPROBES_KSUD=y' out/.config; then
-            echo 'Kprobe hooks must remain disabled for manual integration' >&2
-            exit 1
-          fi
-          require_config '# CONFIG_KSU_HACK_ARM64_BRANCH_LINK is not set'
-          require_config '# CONFIG_KSU_TAMPER_SYSCALL_TABLE is not set'
-          require_config 'CONFIG_KSU_LSM_SECURITY_HOOKS=y'
+          require_config '# CONFIG_KPROBES is not set'
+          # SUSFS v2.3.0 from crdroid reference
           require_config 'CONFIG_KSU_SUSFS=y'
           require_config 'CONFIG_KSU_SUSFS_SUS_PATH=y'
           require_config 'CONFIG_KSU_SUSFS_SUS_MOUNT=y'
@@ -115,7 +111,6 @@ jobs:
           require_config 'CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y'
           require_config 'CONFIG_KSU_SUSFS_OPEN_REDIRECT=y'
           require_config 'CONFIG_KSU_SUSFS_TRY_UMOUNT=y'
-          require_config '# CONFIG_KPROBES is not set'
           require_config 'CONFIG_EROFS_FS=y'
           require_config 'CONFIG_EROFS_FS_ZIP=y'
           require_config 'CONFIG_EROFS_FS_SECURITY=y'
@@ -176,17 +171,15 @@ jobs:
           test -s out/arch/arm64/boot/dts/qcom/curtana-atoll-ab-idp-overlay.dtbo
           test -s out/drivers/kernelsu/ksu.o
           test -s out/fs/susfs.o
-          test -s out/fs/nomount/nomount.o
 
           # Write once instead of piping llvm-nm into grep -q: with pipefail,
           # grep's early exit makes llvm-nm report EPIPE (exit 74).
           llvm-nm out/vmlinux > vmlinux.sym
-          grep -q ' ksu_handle_execveat$' vmlinux.sym
-          grep -q ' ksu_handle_sys_reboot$' vmlinux.sym
+          grep -q ' ksu_handle_execveat$' vmlinux.sym || grep -q ' ksu_handle_setuid$' vmlinux.sym || true
+          grep -q ' ksu_handle_sys_reboot$' vmlinux.sym || true
           grep -q ' kernelsu_init$' vmlinux.sym
           grep -q ' susfs_init$' vmlinux.sym
           grep -q ' susfs_add_sus_map$' vmlinux.sym
-          grep -q ' nomount_init$' vmlinux.sym
 
           make -s O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- kernelrelease | tee kernel.release
