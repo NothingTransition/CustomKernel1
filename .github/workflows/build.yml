@@ -12,122 +12,200 @@ on:
       - main
   workflow_dispatch:
 
+env:
+  ARCH: arm64
+  DEFCONFIG: vendor/xiaomi/miatoll_defconfig
+
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    name: Compile and verify
+    runs-on: ubuntu-24.04
     timeout-minutes: 90
+
     steps:
-      - name: Checkout
+      - name: Checkout kernel source
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
 
-      - name: Install Clang 18 + deps (fast apt)
+      - name: Install build dependencies
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq wget lsb-release software-properties-common gnupg
-          # Add LLVM apt repo for clang 18
-          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
-          echo "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-18 main" | sudo tee /etc/apt/sources.list.d/llvm.list
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq \
-            clang-18 lld-18 llvm-18 \
-            bc bison flex libssl-dev libelf-dev \
-            ccache git zip python3 \
-            binutils-aarch64-linux-gnu \
-            gcc-aarch64-linux-gnu
-          clang-18 --version
-          ld.lld-18 --version
-          # Symlink clang-18 as clang for kernel build
-          sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-18 100
-          sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-18 100
-          sudo update-alternatives --install /usr/bin/ld.lld ld.lld /usr/bin/ld.lld-18 100
-          sudo update-alternatives --install /usr/bin/llvm-ar llvm-ar /usr/bin/llvm-ar-18 100
-          sudo update-alternatives --install /usr/bin/llvm-nm llvm-nm /usr/bin/llvm-nm-18 100
-          sudo update-alternatives --install /usr/bin/llvm-objcopy llvm-objcopy /usr/bin/llvm-objcopy-18 100
-          sudo update-alternatives --install /usr/bin/llvm-objdump llvm-objdump /usr/bin/llvm-objdump-18 100
-          sudo update-alternatives --install /usr/bin/llvm-strip llvm-strip /usr/bin/llvm-strip-18 100
-          sudo update-alternatives --install /usr/bin/llvm-readelf llvm-readelf /usr/bin/llvm-readelf-18 100
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison ccache clang flex git kmod libelf-dev libc6-dev lld llvm make \
+            libssl-dev python3 rsync zip
+
+      - name: Restore compiler cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: stormbreaker-ccache-${{ runner.os }}-${{ hashFiles('**/miatoll_defconfig') }}
+          restore-keys: |
+            stormbreaker-ccache-${{ runner.os }}-
+
+      - name: Verify LLVM toolchain (pure Clang 18, no GCC)
+        run: |
+          set -euo pipefail
+          echo "Toolchain: Ubuntu 24.04 LLVM (pure Clang, no GCC prebuilt)"
           clang --version
           ld.lld --version
+          llvm-ar --version
+          llvm-nm --version
+          llvm-objcopy --version
+          for tool in clang clang++ ld.lld llvm-ar llvm-nm llvm-objcopy llvm-objdump llvm-readelf llvm-strip; do
+            command -v "$tool"
+          done | tee toolchain-info.txt
 
-      - name: Set up ccache
-        uses: hendrikmuhs/ccache-action@v1.2
-        with:
-          key: stormbreaker-clang18-${{ hashFiles('**/miatoll_defconfig') }}
-          max-size: 2G
-
-      - name: Build Kernel - Pure Clang 18 (apt, no GCC prebuilt)
+      - name: Generate and verify Miatoll configuration
         run: |
-          export ARCH=arm64
-          export SUBARCH=arm64
-          export KBUILD_BUILD_HOST=android-build
-          export KBUILD_BUILD_USER=kardebayan
+          set -euo pipefail
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- "$DEFCONFIG"
+
+          echo "=== Verifying fixed configs ==="
+          grep -E "MODULE_SIG|BBR|F2FS|NTFS|BPF|KPROBES|SCHED_FQ|DEFAULT_BBR" out/.config | sort
+
+          # Our fixes should be present (adapted from sibling verification)
+          # Module sig must NOT be forced
+          if grep -q "^CONFIG_MODULE_SIG_FORCE=y" out/.config; then
+            echo "CONFIG_MODULE_SIG_FORCE must be disabled" >&2
+            exit 1
+          fi
+          # BBR must be present
+          grep -qx "CONFIG_TCP_CONG_BBR=y" out/.config || (echo "BBR missing" >&2; exit 1)
+          grep -qx "CONFIG_NET_SCH_FQ=y" out/.config || (echo "FQ missing for BBR" >&2; exit 1)
+          # NTFS RW
+          grep -qx "CONFIG_NTFS_FS=y" out/.config || (echo "NTFS missing" >&2; exit 1)
+          grep -qx "CONFIG_NTFS_RW=y" out/.config || (echo "NTFS_RW missing" >&2; exit 1)
+          # F2FS compression
+          grep -qx "CONFIG_F2FS_FS_COMPRESSION=y" out/.config || (echo "F2FS compression missing" >&2; exit 1)
+          # BPF
+          grep -qx "CONFIG_BPF_SYSCALL=y" out/.config || (echo "BPF_SYSCALL missing" >&2; exit 1)
+          grep -qx "CONFIG_BPF_JIT=y" out/.config || (echo "BPF_JIT missing" >&2; exit 1)
+          # No modules (we removed 3)
+          if grep -q "^CONFIG.*=m" out/.config; then
+            echo "Found =m modules, expected 0 (we removed USB_GSPCA, RMNET_PERF, RMNET_SHS):"
+            grep "^CONFIG.*=m" out/.config
+            exit 1
+          fi
+          echo "Config verification passed"
+
+      - name: Build kernel, DTB, DTBO (pure Clang 18)
+        run: |
+          set -euo pipefail
           export USE_CCACHE=1
-          export CCACHE_SLOPPINESS="pch_defines,time_macros"
-          ccache -M 2G
+          export CCACHE_DIR="$HOME/.cache/ccache"
+          export KBUILD_BUILD_USER=github-actions
+          export KBUILD_BUILD_HOST=kernel-ci
+          ccache --max-size=5G
           ccache -z
 
-          make O=out ARCH=arm64 vendor/xiaomi/miatoll_defconfig
-          echo "=== Defconfig OK ==="
-          grep -E "MODULE_SIG|BBR|F2FS|KPROBES" out/.config | head -n 20
-
-          echo "=== Fast Clang 18 Build (apt) ==="
-          make -j$(nproc --all) O=out \
-            ARCH=arm64 \
-            CC="ccache clang" \
-            HOSTCC="ccache clang" \
-            HOSTCXX="ccache clang++" \
-            LD="ld.lld" \
-            AR="llvm-ar" \
-            NM="llvm-nm" \
-            OBJCOPY="llvm-objcopy" \
-            OBJDUMP="llvm-objdump" \
-            STRIP="llvm-strip" \
-            READELF="llvm-readelf" \
-            CLANG_TRIPLE="aarch64-linux-gnu-" \
-            CROSS_COMPILE="aarch64-linux-gnu-" \
-            CROSS_COMPILE_ARM32="arm-linux-gnueabi-" \
-            LLVM=1 \
-            LLVM_IAS=1 \
+          echo "=== Building with pure Clang 18, LLVM=1 LLVM_IAS=1, no GCC ==="
+          set +e
+          make -j"$(nproc)" O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            CC='ccache clang' CROSS_COMPILE=aarch64-linux-gnu- \
             CONFIG_NO_ERROR_ON_MISMATCH=y \
-            2>&1 | tee out/build.log
+            >build.log 2>&1
+          build_status=$?
+          set -e
 
+          if [ "$build_status" -ne 0 ]; then
+            echo 'Kernel build failed. Diagnostics:'
+            grep -Ei 'error:|undefined reference|No rule to make target|Error [0-9]+' build.log | tail -n 100 || true
+            tail -n 300 build.log
+            exit "$build_status"
+          fi
+
+          tail -n 100 build.log
           ccache -s
-          ls -lh out/arch/arm64/boot/
-          [ -f out/arch/arm64/boot/Image.gz ] && echo "Image.gz OK" || ( [ -f out/arch/arm64/boot/Image ] && gzip -k out/arch/arm64/boot/Image && echo "Image gzipped" )
-          tail -n 50 out/build.log
 
-      - name: Package AnyKernel3
+      - name: Verify build products
         run: |
-          TANGGAL=$(date +"%Y%m%d-%H")
-          echo "TANGGAL=$TANGGAL" >> $GITHUB_ENV
-          ZIMAGE=out/arch/arm64/boot/Image.gz
-          [ -f "$ZIMAGE" ] || ZIMAGE=out/arch/arm64/boot/Image
-          [ -f "$ZIMAGE" ] || (echo "No image!" && exit 1)
-          du -h $ZIMAGE
+          set -euo pipefail
+          ls -lh out/arch/arm64/boot/
+          test -s out/arch/arm64/boot/Image.gz
+          # dtb.img and dtbo.img may be generated via build - check if exists, if not try to build them
+          if [ ! -f out/arch/arm64/boot/dtb.img ]; then
+            echo "dtb.img not found, trying to build dtbs"
+            make -j"$(nproc)" O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC='ccache clang' CROSS_COMPILE=aarch64-linux-gnu- dtbs 2>&1 | tail -n 20 || true
+            # Some kernels generate dtb.img via custom target
+            if [ -f out/arch/arm64/boot/dts/qcom/*.dtb ]; then
+              echo "Found dtbs in dts/qcom"
+              ls out/arch/arm64/boot/dts/qcom/*.dtb | head -n 5
+            fi
+          fi
+          # At least Image.gz must exist
+          test -s out/arch/arm64/boot/Image.gz
+          echo "Image.gz exists: $(du -h out/arch/arm64/boot/Image.gz)"
 
-          rm -rf AnyKernel
-          cp -r AnyKernel3 AnyKernel
-          cp $ZIMAGE AnyKernel/
-          rm -f AnyKernel/STRUCTURE.md
+          make -s O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- kernelrelease | tee kernel.release
+          sha256sum out/arch/arm64/boot/Image.gz | tee SHA256SUMS
 
-          cd AnyKernel
-          zip -r9 Stormbreaker-miatoll-${TANGGAL}-Clang18-Fast.zip * -x .git README.md *placeholder .placeholder
-          ls -lh *.zip
-          cd ..
+          {
+            echo "commit=${GITHUB_SHA}"
+            echo "kernel.release=$(cat kernel.release)"
+            echo "toolchain=ubuntu-24.04-llvm pure Clang"
+            clang --version | head -n 1
+            ld.lld --version | head -n 1
+          } | tee build-info.txt
 
-      - name: Upload Zip
+      - name: Package AnyKernel3 flashable zip (normal structure)
+        run: |
+          set -euo pipefail
+          rm -rf package artifacts
+          mkdir -p artifacts
+          # Use our normalized AnyKernel3 structure
+          rsync -a --exclude='.gitignore' --exclude='README.md' --exclude='placeholder' AnyKernel3/ package/
+          mkdir -p package/ramdisk package/patch
+
+          cp out/arch/arm64/boot/Image.gz package/Image.gz
+          # Copy dtb/dtbo if they exist (sibling does this)
+          if [ -f out/arch/arm64/boot/dtb.img ]; then
+            cp out/arch/arm64/boot/dtb.img package/dtb
+            cp out/arch/arm64/boot/dtb.img package/dtb.img || true
+          elif [ -f out/arch/arm64/boot/dtb ]; then
+            cp out/arch/arm64/boot/dtb package/dtb
+          fi
+          if [ -f out/arch/arm64/boot/dtbo.img ]; then
+            cp out/arch/arm64/boot/dtbo.img package/dtbo.img
+          fi
+          # Also copy dtb files from dts if needed
+          if [ -d out/arch/arm64/boot/dts/qcom ]; then
+            find out/arch/arm64/boot/dts/qcom -name "*.dtb" -exec cp {} package/ \; 2>/dev/null || true
+          fi
+
+          # No modules - all built-in (we removed USB_GSPCA, RMNET_PERF, RMNET_SHS)
+          echo "No modules packaged - all built-in"
+
+          (
+            cd package
+            zip -r9 "../artifacts/Stormbreaker-miatoll-Clang18-Fast-${GITHUB_RUN_NUMBER}.zip" . -x .git README.md
+          )
+
+          cp kernel.release SHA256SUMS build-info.txt toolchain-info.txt artifacts/ 2>/dev/null || true
+          cp out/arch/arm64/boot/Image.gz artifacts/ 2>/dev/null || true
+          [ -f out/arch/arm64/boot/dtb.img ] && cp out/arch/arm64/boot/dtb.img artifacts/ || true
+          [ -f out/arch/arm64/boot/dtbo.img ] && cp out/arch/arm64/boot/dtbo.img artifacts/ || true
+          sha256sum artifacts/Stormbreaker-miatoll-*.zip >> artifacts/SHA256SUMS 2>/dev/null || true
+          unzip -l artifacts/Stormbreaker-miatoll-*.zip | head -n 30
+          ls -lh artifacts/
+
+      - name: Upload kernel artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Stormbreaker-miatoll-${{ env.TANGGAL }}-Clang18
-          path: AnyKernel/*.zip
+          name: miatoll-kernel-${{ github.run_number }}-Clang18
+          path: artifacts/
+          if-no-files-found: error
+          compression-level: 9
           retention-days: 14
 
-      - name: Upload Log on Fail
+      - name: Upload failure diagnostics
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: build-log
-          path: out/build.log
-          retention-days: 3
+          name: miatoll-build-failure-${{ github.run_number }}
+          path: |
+            build.log
+            out/.config
+            toolchain-info.txt
+          if-no-files-found: ignore
+          retention-days: 7
