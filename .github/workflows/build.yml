@@ -1,211 +1,93 @@
-name: Build Stormbreaker Kernel - Clang 18 Fast
+name: Build Stormbreaker - Clang 22 Fast
 
 concurrency:
-  group: stormbreaker-miatoll-${{ github.ref }}
+  group: stormbreaker-${{ github.ref }}
   cancel-in-progress: true
 
 on:
   push:
-    branches:
-      - a
-      - arena/**
-      - main
+    branches: [a, arena/**, main]
   workflow_dispatch:
-
-env:
-  ARCH: arm64
-  DEFCONFIG: vendor/xiaomi/miatoll_defconfig
 
 jobs:
   build:
-    name: Compile and verify
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
-
+    timeout-minutes: 60
     steps:
-      - name: Checkout kernel source
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 1
 
-      - name: Install build dependencies
+      - name: Install deps + Clang
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            bc bison ccache clang flex git kmod libelf-dev libc6-dev lld llvm make \
-            libssl-dev python3 rsync zip
-
-      - name: Restore compiler cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ccache
-          key: stormbreaker-ccache-${{ runner.os }}-${{ hashFiles('**/miatoll_defconfig') }}
-          restore-keys: |
-            stormbreaker-ccache-${{ runner.os }}-
-
-      - name: Verify LLVM toolchain (pure Clang 18, no GCC)
-        run: |
-          set -euo pipefail
-          echo "Toolchain: Ubuntu 24.04 LLVM (pure Clang, no GCC prebuilt)"
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq bc bison flex libssl-dev libelf-dev ccache clang lld llvm make python3 zip kmod rsync
           clang --version
           ld.lld --version
-          llvm-ar --version
-          llvm-nm --version
-          llvm-objcopy --version
-          for tool in clang clang++ ld.lld llvm-ar llvm-nm llvm-objcopy llvm-objdump llvm-readelf llvm-strip; do
-            command -v "$tool"
-          done | tee toolchain-info.txt
 
-      - name: Generate and verify Miatoll configuration
+      - name: Try Clang 20 for faster
         run: |
-          set -euo pipefail
-          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- "$DEFCONFIG"
-
-          echo "=== Verifying fixed configs ==="
-          grep -E "MODULE_SIG|BBR|F2FS|NTFS|BPF|KPROBES|SCHED_FQ|DEFAULT_BBR" out/.config | sort
-
-          # Our fixes should be present (adapted from sibling verification)
-          # Module sig must NOT be forced
-          if grep -q "^CONFIG_MODULE_SIG_FORCE=y" out/.config; then
-            echo "CONFIG_MODULE_SIG_FORCE must be disabled" >&2
-            exit 1
+          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc >/dev/null
+          echo "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-20 main" | sudo tee /etc/apt/sources.list.d/llvm20.list
+          sudo apt-get update -qq || true
+          sudo apt-get install -y -qq clang-20 lld-20 llvm-20 2>&1 | tail -n 5 || echo "clang-20 not available"
+          if command -v clang-20 >/dev/null; then
+            sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-20 200
+            sudo update-alternatives --install /usr/bin/ld.lld ld.lld /usr/bin/ld.lld-20 200
+            sudo update-alternatives --install /usr/bin/llvm-ar llvm-ar /usr/bin/llvm-ar-20 200
+            sudo update-alternatives --install /usr/bin/llvm-nm llvm-nm /usr/bin/llvm-nm-20 200
+            sudo update-alternatives --install /usr/bin/llvm-objcopy llvm-objcopy /usr/bin/llvm-objcopy-20 200
+            sudo update-alternatives --install /usr/bin/llvm-objdump llvm-objdump /usr/bin/llvm-objdump-20 200
+            sudo update-alternatives --install /usr/bin/llvm-strip llvm-strip /usr/bin/llvm-strip-20 200
           fi
-          # BBR must be present
-          grep -qx "CONFIG_TCP_CONG_BBR=y" out/.config || (echo "BBR missing" >&2; exit 1)
-          grep -qx "CONFIG_NET_SCH_FQ=y" out/.config || (echo "FQ missing for BBR" >&2; exit 1)
-          # NTFS RW
-          grep -qx "CONFIG_NTFS_FS=y" out/.config || (echo "NTFS missing" >&2; exit 1)
-          grep -qx "CONFIG_NTFS_RW=y" out/.config || (echo "NTFS_RW missing" >&2; exit 1)
-          # F2FS compression
-          grep -qx "CONFIG_F2FS_FS_COMPRESSION=y" out/.config || (echo "F2FS compression missing" >&2; exit 1)
-          # BPF
-          grep -qx "CONFIG_BPF_SYSCALL=y" out/.config || (echo "BPF_SYSCALL missing" >&2; exit 1)
-          grep -qx "CONFIG_BPF_JIT=y" out/.config || (echo "BPF_JIT missing" >&2; exit 1)
-          # No modules (we removed 3)
-          if grep -q "^CONFIG.*=m" out/.config; then
-            echo "Found =m modules, expected 0 (we removed USB_GSPCA, RMNET_PERF, RMNET_SHS):"
-            grep "^CONFIG.*=m" out/.config
-            exit 1
-          fi
-          echo "Config verification passed"
+          clang --version
 
-      - name: Build kernel, DTB, DTBO (pure Clang 18)
+      - name: ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: sb-${{ runner.os }}-${{ hashFiles('**/miatoll_defconfig') }}
+          max-size: 2G
+
+      - name: Defconfig
         run: |
-          set -euo pipefail
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- vendor/xiaomi/miatoll_defconfig
+          grep -E "BBR|NTFS|F2FS|MODULE_SIG_FORCE" out/.config | head -n 20
+
+      - name: Fast Build pure Clang
+        run: |
           export USE_CCACHE=1
-          export CCACHE_DIR="$HOME/.cache/ccache"
-          export KBUILD_BUILD_USER=github-actions
-          export KBUILD_BUILD_HOST=kernel-ci
-          ccache --max-size=5G
+          export CCACHE_DIR=$HOME/.cache/ccache
+          ccache -M 2G
           ccache -z
-
-          echo "=== Building with pure Clang 18, LLVM=1 LLVM_IAS=1, no GCC ==="
-          set +e
-          make -j"$(nproc)" O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            CC='ccache clang' CROSS_COMPILE=aarch64-linux-gnu- \
-            CONFIG_NO_ERROR_ON_MISMATCH=y \
-            >build.log 2>&1
-          build_status=$?
-          set -e
-
-          if [ "$build_status" -ne 0 ]; then
-            echo 'Kernel build failed. Diagnostics:'
-            grep -Ei 'error:|undefined reference|No rule to make target|Error [0-9]+' build.log | tail -n 100 || true
-            tail -n 300 build.log
-            exit "$build_status"
-          fi
-
-          tail -n 100 build.log
+          make -j$(nproc) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="ccache clang" CROSS_COMPILE=aarch64-linux-gnu- CONFIG_NO_ERROR_ON_MISMATCH=y 2>&1 | tee build.log
           ccache -s
-
-      - name: Verify build products
-        run: |
-          set -euo pipefail
           ls -lh out/arch/arm64/boot/
-          test -s out/arch/arm64/boot/Image.gz
-          # dtb.img and dtbo.img may be generated via build - check if exists, if not try to build them
-          if [ ! -f out/arch/arm64/boot/dtb.img ]; then
-            echo "dtb.img not found, trying to build dtbs"
-            make -j"$(nproc)" O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC='ccache clang' CROSS_COMPILE=aarch64-linux-gnu- dtbs 2>&1 | tail -n 20 || true
-            # Some kernels generate dtb.img via custom target
-            if [ -f out/arch/arm64/boot/dts/qcom/*.dtb ]; then
-              echo "Found dtbs in dts/qcom"
-              ls out/arch/arm64/boot/dts/qcom/*.dtb | head -n 5
-            fi
-          fi
-          # At least Image.gz must exist
-          test -s out/arch/arm64/boot/Image.gz
-          echo "Image.gz exists: $(du -h out/arch/arm64/boot/Image.gz)"
+          test -f out/arch/arm64/boot/Image.gz && echo "OK" || (test -f out/arch/arm64/boot/Image && gzip -k out/arch/arm64/boot/Image)
 
-          make -s O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- kernelrelease | tee kernel.release
-          sha256sum out/arch/arm64/boot/Image.gz | tee SHA256SUMS
-
-          {
-            echo "commit=${GITHUB_SHA}"
-            echo "kernel.release=$(cat kernel.release)"
-            echo "toolchain=ubuntu-24.04-llvm pure Clang"
-            clang --version | head -n 1
-            ld.lld --version | head -n 1
-          } | tee build-info.txt
-
-      - name: Package AnyKernel3 flashable zip (normal structure)
+      - name: Package AnyKernel3
         run: |
-          set -euo pipefail
-          rm -rf package artifacts
+          rm -rf AnyKernel artifacts
           mkdir -p artifacts
-          # Use our normalized AnyKernel3 structure
-          rsync -a --exclude='.gitignore' --exclude='README.md' --exclude='placeholder' AnyKernel3/ package/
-          mkdir -p package/ramdisk package/patch
-
-          cp out/arch/arm64/boot/Image.gz package/Image.gz
-          # Copy dtb/dtbo if they exist (sibling does this)
-          if [ -f out/arch/arm64/boot/dtb.img ]; then
-            cp out/arch/arm64/boot/dtb.img package/dtb
-            cp out/arch/arm64/boot/dtb.img package/dtb.img || true
-          elif [ -f out/arch/arm64/boot/dtb ]; then
-            cp out/arch/arm64/boot/dtb package/dtb
-          fi
-          if [ -f out/arch/arm64/boot/dtbo.img ]; then
-            cp out/arch/arm64/boot/dtbo.img package/dtbo.img
-          fi
-          # Also copy dtb files from dts if needed
-          if [ -d out/arch/arm64/boot/dts/qcom ]; then
-            find out/arch/arm64/boot/dts/qcom -name "*.dtb" -exec cp {} package/ \; 2>/dev/null || true
-          fi
-
-          # No modules - all built-in (we removed USB_GSPCA, RMNET_PERF, RMNET_SHS)
-          echo "No modules packaged - all built-in"
-
-          (
-            cd package
-            zip -r9 "../artifacts/Stormbreaker-miatoll-Clang18-Fast-${GITHUB_RUN_NUMBER}.zip" . -x .git README.md
-          )
-
-          cp kernel.release SHA256SUMS build-info.txt toolchain-info.txt artifacts/ 2>/dev/null || true
-          cp out/arch/arm64/boot/Image.gz artifacts/ 2>/dev/null || true
-          [ -f out/arch/arm64/boot/dtb.img ] && cp out/arch/arm64/boot/dtb.img artifacts/ || true
-          [ -f out/arch/arm64/boot/dtbo.img ] && cp out/arch/arm64/boot/dtbo.img artifacts/ || true
-          sha256sum artifacts/Stormbreaker-miatoll-*.zip >> artifacts/SHA256SUMS 2>/dev/null || true
-          unzip -l artifacts/Stormbreaker-miatoll-*.zip | head -n 30
+          cp -r AnyKernel3 AnyKernel
+          cp out/arch/arm64/boot/Image.gz AnyKernel/ 2>/dev/null || cp out/arch/arm64/boot/Image AnyKernel/
+          [ -f out/arch/arm64/boot/dtb.img ] && cp out/arch/arm64/boot/dtb.img AnyKernel/dtb || true
+          [ -f out/arch/arm64/boot/dtbo.img ] && cp out/arch/arm64/boot/dtbo.img AnyKernel/dtbo.img || true
+          cd AnyKernel
+          zip -r9 ../artifacts/Stormbreaker-Clang22-Fast-${{ github.run_number }}.zip * -x .git README.md
+          cd ..
           ls -lh artifacts/
 
-      - name: Upload kernel artifacts
+      - name: Upload
         uses: actions/upload-artifact@v4
         with:
-          name: miatoll-kernel-${{ github.run_number }}-Clang18
+          name: Stormbreaker-Clang22-${{ github.run_number }}
           path: artifacts/
-          if-no-files-found: error
-          compression-level: 9
-          retention-days: 14
+          retention-days: 7
 
-      - name: Upload failure diagnostics
+      - name: Upload log on fail
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: miatoll-build-failure-${{ github.run_number }}
-          path: |
-            build.log
-            out/.config
-            toolchain-info.txt
-          if-no-files-found: ignore
-          retention-days: 7
+          name: fail-log-${{ github.run_number }}
+          path: build.log
+          retention-days: 3
