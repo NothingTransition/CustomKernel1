@@ -29,6 +29,7 @@ Linux 4.14.357-openela · built with Clang/LLVM 18 · A-only flash
 ### Filesystems & compatibility
 - EROFS support
 - NTFS support
+- F2FS with compression (LZO / LZ4 / ZSTD) + encryption + security labels
 - Loadable module support with SHA512 signature verification (unsigned modules load with taint)
 - Ships kernel + dtb + dtbo; preserves your ROM's ramdisk and existing root setup
 
