@@ -49,7 +49,7 @@ jobs:
   build:
     name: Compile and verify
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 120
 
     steps:
       - name: Checkout kernel source
@@ -70,12 +70,14 @@ jobs:
           restore-keys: |
             stormbreaker-ccache-${{ runner.os }}-
 
-      - name: Verify LLVM toolchain
+      - name: Verify LLVM toolchain (Clang 18 pure, like crdroid sm8150 build.config.common)
         shell: bash
         run: |
           set -euo pipefail
           {
-            echo "Toolchain source: Ubuntu 24.04 LLVM - Clang 18 pure, no GCC"
+            echo "Toolchain source: Ubuntu 24.04 LLVM - Clang 18 pure, no GCC (CC=clang LD=ld.lld LLVM=1 LLVM_IAS=1)"
+            echo "Reference: https://github.com/crdroidandroid/android_kernel_xiaomi_sm8150 build.config.common"
+            echo "BRANCH=android-4.14 CC=clang LD=ld.lld ARCH=arm64 LLVM=1 LLVM_IAS=1"
             clang --version
             ld.lld --version
             llvm-ar --version
@@ -86,10 +88,11 @@ jobs:
             done
           } | tee toolchain-info.txt
 
-      - name: Generate and verify Miatoll configuration
+      - name: Generate and verify Miatoll configuration (crdroid sm8150 reference)
         shell: bash
         run: |
           set -euo pipefail
+          # Pure Clang 18 build like crdroid sm8150: CC=clang LD=ld.lld LLVM=1 LLVM_IAS=1
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- "$DEFCONFIG"
 
@@ -100,7 +103,6 @@ jobs:
             }
           }
 
-          # Our fixed configs - adapted from sibling but without KSU (since KSU not yet integrated)
           # Module signing must not be forced (allow unsigned modules)
           require_config '# CONFIG_MODULE_SIG_FORCE is not set'
           # BBR + FQ for BBR
@@ -111,22 +113,40 @@ jobs:
           # NTFS RW
           require_config 'CONFIG_NTFS_FS=y'
           require_config 'CONFIG_NTFS_RW=y'
-          # F2FS base (compression disabled for clang 18 compatibility, like sibling)
+          # F2FS entirely (like crdroid enables)
           require_config 'CONFIG_F2FS_FS=y'
+          require_config 'CONFIG_F2FS_FS_SECURITY=y'
           require_config 'CONFIG_F2FS_FS_ENCRYPTION=y'
+          require_config 'CONFIG_F2FS_FS_COMPRESSION=y'
+          # EROFS fully
+          require_config 'CONFIG_EROFS_FS=y'
           # BPF
           require_config 'CONFIG_BPF_SYSCALL=y'
           require_config 'CONFIG_BPF_JIT=y'
           require_config 'CONFIG_CGROUP_BPF=y'
+          # KernelSU Next v3.4.0 + SUSFS v2.3.0 (reference: crdroid sm8150 drivers/kernelsu, fs/susfs.c)
+          require_config 'CONFIG_KSU=y'
+          require_config 'CONFIG_KSU_SUSFS=y'
+          require_config 'CONFIG_KSU_SUSFS_SUS_PATH=y'
+          require_config 'CONFIG_KSU_SUSFS_SUS_MOUNT=y'
+          require_config 'CONFIG_KSU_SUSFS_SUS_KSTAT=y'
+          require_config 'CONFIG_KSU_SUSFS_TRY_UMOUNT=y'
+          require_config 'CONFIG_KSU_SUSFS_SPOOF_UNAME=y'
+          require_config 'CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y'
+          require_config 'CONFIG_KSU_SUSFS_OPEN_REDIRECT=y'
+          require_config 'CONFIG_KSU_SUSFS_SUS_MAP=y'
           # No modules - we removed USB_GSPCA, RMNET_PERF, RMNET_SHS
           if grep -q "^CONFIG_USB_GSPCA=m" out/.config; then echo "USB_GSPCA should be disabled" >&2; exit 1; fi
           if grep -q "^CONFIG_RMNET_PERF=m" out/.config; then echo "RMNET_PERF should be disabled" >&2; exit 1; fi
           if grep -q "^CONFIG_RMNET_SHS=m" out/.config; then echo "RMNET_SHS should be disabled" >&2; exit 1; fi
+          if grep -q "^CONFIG_USB_GSPCA=y" out/.config; then echo "USB_GSPCA should be disabled" >&2; exit 1; fi
+          if grep -q "^CONFIG_RMNET_PERF=y" out/.config; then echo "RMNET_PERF should be disabled" >&2; exit 1; fi
+          if grep -q "^CONFIG_RMNET_SHS=y" out/.config; then echo "RMNET_SHS should be disabled" >&2; exit 1; fi
 
-          echo "Config verification passed"
-          grep -E "BBR|NTFS|F2FS|MODULE_SIG|BPF|SCHED_FQ" out/.config | sort
+          echo "Config verification passed (crdroid sm8150 reference: KSU Next + SUSFS + F2FS/EROFS/BBR/BPF)"
+          grep -E "KSU|SUSFS|BBR|NTFS|F2FS|EROFS|MODULE_SIG|BPF|SCHED_FQ" out/.config | sort
 
-      - name: Build kernel, DTB, DTBO and modules
+      - name: Build kernel, DTB, DTBO (pure Clang 18, LLVM=1 LLVM_IAS=1)
         shell: bash
         run: |
           set -euo pipefail
@@ -138,8 +158,11 @@ jobs:
           ccache -z
 
           set +e
+          # crdroid sm8150 reference build.config.common: CC=clang LD=ld.lld
+          # We use LLVM=1 LLVM_IAS=1 which sets CC=clang LD=ld.lld automatically, plus ccache
           make -j"$(nproc)" O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
-            CC='ccache clang' CROSS_COMPILE=aarch64-linux-gnu- \
+            CC='ccache clang' LD=ld.lld CROSS_COMPILE=aarch64-linux-gnu- \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
             CONFIG_NO_ERROR_ON_MISMATCH=y \
             >build.log 2>&1
           build_status=$?
@@ -148,8 +171,8 @@ jobs:
           if [ "$build_status" -ne 0 ]; then
             echo 'Kernel build failed. Relevant diagnostics:'
             grep -Ei 'error:|undefined reference|No rule to make target|Error [0-9]+' build.log \
-              | tail -n 100 || true
-            tail -n 300 build.log
+              | tail -n 150 || true
+            tail -n 400 build.log
             exit "$build_status"
           fi
 
@@ -174,7 +197,6 @@ jobs:
           set -euo pipefail
           ls -lh out/arch/arm64/boot/
           test -s out/arch/arm64/boot/Image.gz
-          # dtb.img and dtbo.img are built by default in this kernel
           if [ -f out/arch/arm64/boot/dtb.img ]; then
             test -s out/arch/arm64/boot/dtb.img
             echo "dtb.img exists"
@@ -183,7 +205,6 @@ jobs:
             test -s out/arch/arm64/boot/dtbo.img
             echo "dtbo.img exists"
           fi
-          # Check for overlay dtbo
           if [ -f out/arch/arm64/boot/dts/qcom/curtana-atoll-ab-idp-overlay.dtbo ]; then
             test -s out/arch/arm64/boot/dts/qcom/curtana-atoll-ab-idp-overlay.dtbo
           fi
@@ -197,13 +218,16 @@ jobs:
           {
             echo "commit=${GITHUB_SHA}"
             echo "kernel.release=$(cat kernel.release)"
-            echo "toolchain.source=ubuntu-24.04-llvm Clang 18"
+            echo "toolchain.source=ubuntu-24.04-llvm Clang 18 pure (CC=clang LD=ld.lld LLVM=1 LLVM_IAS=1)"
+            echo "reference=crdroidandroid/android_kernel_xiaomi_sm8150"
+            echo "ksu.version=v3.4.0"
+            echo "susfs.version=v2.3.0"
             clang --version | head -n 1 | sed 's/^/clang.version=/'
             ld.lld --version | head -n 1 | sed 's/^/lld.version=/'
-            grep -E '^(CONFIG_TCP_CONG_BBR|CONFIG_NTFS_FS|CONFIG_F2FS_FS|CONFIG_BPF_SYSCALL|CONFIG_MODULE_SIG_FORCE)' out/.config || true
+            grep -E '^(CONFIG_KSU|CONFIG_TCP_CONG_BBR|CONFIG_NTFS_FS|CONFIG_F2FS_FS|CONFIG_EROFS_FS|CONFIG_BPF_SYSCALL|CONFIG_MODULE_SIG_FORCE)' out/.config || true
           } | tee build-info.txt
 
-      - name: Package AnyKernel3 flashable zip
+      - name: Package AnyKernel3 flashable zip (osm0sis layout)
         shell: bash
         run: |
           set -euo pipefail
@@ -226,11 +250,12 @@ jobs:
           fi
 
           # No modules - all built-in (removed USB_GSPCA, RMNET_PERF, RMNET_SHS)
-          mkdir -p package/ramdisk package/patch
+          # osm0sis AnyKernel3 layout: ramdisk/, modules/, patch/ with flash.sh type structure
+          mkdir -p package/ramdisk package/patch package/modules
 
           (
             cd package
-            zip -r9 "../artifacts/Stormbreaker-miatoll-Clang18-${GITHUB_RUN_NUMBER}.zip" .
+            zip -r9 "../artifacts/Stormbreaker-miatoll-Clang18-KSU-SUSFS-${GITHUB_RUN_NUMBER}.zip" .
           )
 
           cp kernel.release SHA256SUMS build-info.txt toolchain-info.txt artifacts/ 2>/dev/null || true
@@ -238,13 +263,13 @@ jobs:
           [ -f out/arch/arm64/boot/dtb.img ] && cp out/arch/arm64/boot/dtb.img artifacts/ || true
           [ -f out/arch/arm64/boot/dtbo.img ] && cp out/arch/arm64/boot/dtbo.img artifacts/ || true
           sha256sum artifacts/Stormbreaker-miatoll-*.zip >> artifacts/SHA256SUMS 2>/dev/null || true
-          unzip -l artifacts/Stormbreaker-miatoll-*.zip | head -n 30
+          unzip -l artifacts/Stormbreaker-miatoll-*.zip | head -n 40
           ls -lh artifacts/
 
       - name: Upload kernel artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: miatoll-kernel-${{ github.run_number }}-Clang18
+          name: miatoll-kernel-${{ github.run_number }}-Clang18-KSU-SUSFS
           path: artifacts/
           if-no-files-found: error
           compression-level: 9
