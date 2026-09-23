@@ -132,7 +132,7 @@ jobs:
           ccache --max-size=5G
 
           set +e
-          make -j"$(nproc)" O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+          make -j4 O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CC='ccache clang' CROSS_COMPILE=aarch64-linux-gnu- \
             >build.log 2>&1
           build_status=$?
