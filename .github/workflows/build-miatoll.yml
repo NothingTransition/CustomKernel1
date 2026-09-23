@@ -278,9 +278,9 @@ jobs:
           set -euo pipefail
           # gh release download (authenticated) avoids anonymous rate limits
           # and follows asset redirects; exact tags pinned for reproducibility.
-          gh release download v3.3.0-48 -R backslashxx/KernelSU \
-            -p 'KernelSU_v3.3.0-48_*-release.apk' -D release-assets
-          mv release-assets/KernelSU_v3.3.0-48_*-release.apk \
+          gh release download v3.3.0-51 -R backslashxx/KernelSU \
+            -p 'KernelSU_v3.3.0-51_*-release.apk' -D release-assets
+          mv release-assets/KernelSU_v3.3.0-51_*-release.apk \
              release-assets/KernelSU-manager.apk
           gh release download v0.0.68 -R rrr333nnn333/BRENE \
             -p 'BRENE-v0.0.68.zip' -D release-assets
@@ -317,7 +317,7 @@ jobs:
           gh release create "$TAG" \
             --prerelease \
             --target "$GITHUB_SHA" \
-            --title "Stormbreaker — KernelSU v3.3.0-48 + SUSFS v2.3.0 + NoMount + BBR (curtana / Infinity X)" \
+            --title "Stormbreaker — KernelSU v3.3.0-51 + SUSFS v2.3.0 + NoMount + BBR (curtana / Infinity X)" \
             --notes-file release-notes.md \
             release-assets/Stormbreaker-miatoll-*.zip \
             release-assets/KernelSU-manager.apk \

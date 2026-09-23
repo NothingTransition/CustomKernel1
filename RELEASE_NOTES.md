@@ -5,7 +5,7 @@ Linux 4.14.357-openela · built with Clang/LLVM 18 · A-only flash
 ## Features
 
 ### Root & control
-- KernelSU v3.3.0-48 — built-in, supercall-based (no kprobes, no daemon, no /su binary)
+- KernelSU v3.3.0-51 — built-in, supercall-based (no kprobes, no daemon, no /su binary)
 - KernelSU manager app bundled with the release, version-matched to the kernel
 
 ### Hiding stack
@@ -37,7 +37,7 @@ Linux 4.14.357-openela · built with Clang/LLVM 18 · A-only flash
 | File | What it is |
 |---|---|
 | `Stormbreaker-miatoll-*.zip` | Flashable AnyKernel3 zip (kernel + dtb + dtbo) |
-| `KernelSU-manager.apk` | KernelSU manager app v3.3.0-48 — install **after** flashing + booting |
+| `KernelSU-manager.apk` | KernelSU manager app v3.3.0-51 — install **after** flashing + booting |
 | `BRENE-v0.0.68.zip` | SUSFS rules module — install inside the KSU manager, then reboot |
 | `NoMount-v2.0.0.zip` | NoMount module — install inside the KSU manager, then reboot |
 

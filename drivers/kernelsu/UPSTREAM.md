@@ -3,11 +3,24 @@
 This directory vendors the kernel component from:
 
 - Repository: https://github.com/backslashxx/KernelSU
-- Tag: `v3.3.0-48` (KSU_VERSION 32649)
-- Commit: `ba59860f84111b023fc662723043bb6793c3530f`
+- Tag: `v3.3.0-51` (KSU_VERSION 32651)
+- Commit: `d7e36bd05323224c88f105836ae6478b7ee07db9`
+- Note: at this tag upstream's manager APK reports 32653 while the kernel
+  tree reports 32651 (upstream's own skew); we mirror the kernel value.
 
 ## Sync history
 
+- 2026-09-24: manual sync `v3.3.0-48` -> `v3.3.0-51`. Taken upstream:
+  `Makefile` (32649 -> 32651), `include/arch.h` (symbol table rework; only
+  consumed by kprobe code that is not compiled in this tree -- CONFIG_KPROBES
+  is off and kp_ksud.c is not referenced by any Makefile), `hook/kp_ksud.c`
+  (PT_REGS_SYSCALL_PARM1 fixes, same dead-code status), `hook/lsm_hooks_list.c`
+  (#if 0 demo + comment), `kernel_includes.h` (+linux/key.h), `include/util.h`
+  (riscv branch, PT_REGS_SYSCALL_PARM1 in dead >=4.19 path, ksu_sys_umount
+  int->long), `kernel_compat.h` (ksu_sys_umount long + cast on the live <5.9
+  path, <3.11 iterate_dir wrapper dead here, session-keyring grab reworked
+  onto lookup_user_key() which exists on 4.14). Kept local: the usual six
+  SUSFS-carrying files (dispatch.c keeps our atomic one-shot + sdcard monitor).
 - 2026-09-23: manual sync `v3.3.0-43` -> `v3.3.0-48` (16 files reviewed).
   Taken upstream wholesale: `Makefile` (version), `INTERNAL.md`,
   `feature/selinux_hide.h` (cpu type + printk fmt), `hook/lsm_hooks_list.c`
