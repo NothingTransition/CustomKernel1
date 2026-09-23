@@ -3,8 +3,25 @@
 This directory vendors the kernel component from:
 
 - Repository: https://github.com/backslashxx/KernelSU
-- Tag: `v3.3.0-43`
-- Commit: `8942a1504495aec974efb6b0dda4bd9e7d70fbf1`
+- Tag: `v3.3.0-48` (KSU_VERSION 32649)
+- Commit: `ba59860f84111b023fc662723043bb6793c3530f`
+
+## Sync history
+
+- 2026-09-23: manual sync `v3.3.0-43` -> `v3.3.0-48` (16 files reviewed).
+  Taken upstream wholesale: `Makefile` (version), `INTERNAL.md`,
+  `feature/selinux_hide.h` (cpu type + printk fmt), `hook/lsm_hooks_list.c`
+  (error codes + ksym verification; LKM-only bruteforce path is compile-
+  guarded and inactive in our built-in build), `kernel_compat.h` and
+  `include/util.h` (reworked ksyscall machinery and <4.14 compat layer --
+  both dead code on this 4.14.357 tree, live <5.9 paths unchanged in
+  behavior), `selinux/rules.c` (>=5.10 RCU-deref fix, dead code here),
+  whitespace-only `kernel_includes.h`, `feature/kernel_umount.c`,
+  `manager/throne_tracker.c`. Kept local: `ksu.c`, `hook/setuid_hook.c`,
+  `selinux/selinux.c`, `supercall/supercall.c`, `supercall/dispatch.c`,
+  `Kconfig` -- these carry the SUSFS v2.3.0 integration blocks.
+  Note: upstream deleted the `v3.3.0-43` and `v3.3.0-47` tags, so the sync
+  was diffed directly against `v3.3.0-48`.
 
 It is integrated in-tree for the Linux 4.14 non-GKI Miatoll kernel. The
 scope-minimized manual hooks are based on backslashxx/KernelSU issue #5,

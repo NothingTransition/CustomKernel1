@@ -36,7 +36,7 @@ static void *ksu_kvmalloc(size_t size, gfp_t flags)
 	void *buf = kmalloc(size, flags);
 	if (!buf)
 		buf = vmalloc(size);
-
+	
 	return buf;
 }
 #define kvmalloc ksu_kvmalloc
@@ -68,7 +68,7 @@ __weak long copy_from_kernel_nofault(void *dst, const void *src, size_t size)
 }
 #endif
 
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 8, 0)
+#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 8, 0) 
 __weak long copy_from_user_nofault(void *dst, const void __user *src, size_t size)
 {
 	// https://elixir.bootlin.com/linux/v5.8/source/mm/maccess.c#L205
@@ -77,9 +77,11 @@ __weak long copy_from_user_nofault(void *dst, const void __user *src, size_t siz
 
 	set_fs(USER_DS);
 
-	// normally theres an access_ok check here
-	// but for what we use it, it will always be true.
-	// so we skip it
+	/**
+	 * normally theres an access_ok check here
+	 * but for what we use it, it will always be true. 
+	 * we skip it.
+	 */
 	pagefault_disable();
 	ret = __copy_from_user_inatomic(dst, src, size);
 	pagefault_enable();
@@ -137,24 +139,64 @@ static inline void ksu_memzero_explicit(void *s, size_t count) { memset_explicit
 #endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(4, 14, 0)
-// https://elixir.bootlin.com/linux/v4.14.336/source/fs/read_write.c#L418
-// https://elixir.bootlin.com/linux/v4.14.336/source/fs/read_write.c#L512
-static ssize_t ksu_kernel_read_compat(struct file *p, void *buf, size_t count, loff_t *pos)
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0)
+static __nocfi inline ssize_t ksu_kernel_read_compat(struct file *file, void *buf, size_t count, loff_t *pos)
+{
+	extern typeof(kernel_read) kernel_read;
+	static_assert(!!&kernel_read);
+	assume((void *)&kernel_read != nullptr);
+	if (!__builtin_types_compatible_p(typeof(kernel_read), typeof(ksu_kernel_read_compat)))
+		goto compat;
+
+	return ((typeof(ksu_kernel_read_compat) *)&kernel_read)(file, buf, count, pos);
+
+compat:; // https://github.com/tiann/KernelSU/blob/v0.9.5/kernel/kernel_compat.c
+	loff_t offset = pos ? *pos : 0;
+	ssize_t result = ((int (*)(struct file *, loff_t, char *, unsigned long))&kernel_read)(file, offset, (char *)buf, count);
+	if (pos && result > 0)
+		*pos = offset + result;
+	return result;
+}
+#else // https://elixir.bootlin.com/linux/v4.14.336/source/fs/read_write.c#L418
+static noinline ssize_t ksu_kernel_read_compat(struct file *file, void *buf, size_t count, loff_t *pos)
 {
 	mm_segment_t old_fs = get_fs();
 	set_fs(get_ds());
-	ssize_t result = vfs_read(p, (void __user *)buf, count, pos);
+	ssize_t result = vfs_read(file, (void __user *)buf, count, pos);
 	set_fs(old_fs);
 	return result;
 }
-static ssize_t ksu_kernel_write_compat(struct file *p, const void *buf, size_t count, loff_t *pos)
+#endif
+
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 10, 0)
+static __nocfi inline ssize_t ksu_kernel_write_compat(struct file *file, const void *buf, size_t count, loff_t *pos)
+{
+	extern typeof(kernel_write) kernel_write;
+	static_assert(!!&kernel_write);
+	assume((void *)&kernel_write != nullptr);
+	if (!__builtin_types_compatible_p(typeof(kernel_write), typeof(ksu_kernel_write_compat)))
+		goto compat;
+
+	return ((typeof(ksu_kernel_write_compat) *)&kernel_write)(file, buf, count, pos);
+
+compat:; // https://github.com/tiann/KernelSU/blob/v0.9.5/kernel/kernel_compat.c
+	loff_t offset = pos ? *pos : 0;
+	ssize_t result = ((ssize_t (*)(struct file *, const char *, size_t, loff_t))&kernel_write)(file, buf, count, offset);
+	if (pos && result > 0)
+		*pos = offset + result;
+	return result;
+}
+#else // https://elixir.bootlin.com/linux/v4.14.336/source/fs/read_write.c#L512
+static noinline ssize_t ksu_kernel_write_compat(struct file *file, const void *buf, size_t count, loff_t *pos)
 {
 	mm_segment_t old_fs = get_fs();
 	set_fs(get_ds());
-	ssize_t res = vfs_write(p, (__force const char __user *)buf, count, pos);
+	ssize_t res = vfs_write(file, (__force const char __user *)buf, count, pos);
 	set_fs(old_fs);
 	return res;
 }
+#endif
+
 #define kernel_read ksu_kernel_read_compat
 #define kernel_write ksu_kernel_write_compat
 #endif // < 4.14
@@ -169,36 +211,27 @@ static ssize_t ksu_kernel_write_compat(struct file *p, const void *buf, size_t c
 #endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3, 6, 0)
-#if 0 // this does work, but less portable, we can override with d_path + filp_open instead
-static inline struct file *ksu_dentry_open(const struct path *path, int flags, const struct cred *cred)
+static __nocfi struct file *ksu_dentry_open(const struct path *path, int flags, const struct cred *cred)
 {
-	// old dentry_open consumes a reference either on failure or success, we have to take one
-	// see nameidata_to_filp
-	path_get(path);
-	return dentry_open((*path).dentry, (*path).mnt, flags, cred);
+	// new type: struct file * dentry_open(const struct path *, int, const struct cred *);
+	extern typeof(dentry_open) dentry_open;
+	static_assert(!!&dentry_open);
+	assume((void *)&dentry_open != nullptr);
+	if (!__builtin_types_compatible_p(typeof(dentry_open), typeof(ksu_dentry_open)))
+		goto old_fn;
+
+	return ((typeof(ksu_dentry_open) *)&dentry_open)(path, flags, cred);
+
+old_fn:; // old type: struct file * dentry_open(struct dentry *, struct vfsmount *, int, const struct cred *);
+	struct file *(*fn_old)(struct dentry *, struct vfsmount *, int, const struct cred *) = (void *)&dentry_open;
+	/**
+	 * old dentry_open consumes a reference regardless of failure or success (dput/mntput)
+	 * we have take one before calling it, else it releases caller's reference. see nameidata_to_filp
+	 */
+	path_get(path); 
+	return fn_old((*path).dentry, (*path).mnt, flags, cred);
 }
-#endif
-static struct file *ksu_dentry_open_filp(const struct path *path, int flags, const struct cred *cred)
-{
-	char *buf __offstack_flags(PATH_MAX, GFP_KERNEL);
-	if (!buf)
-		return ERR_PTR(-ENOMEM);
-
-	char *realpath = d_path(path, buf, PATH_MAX);
-	if (IS_ERR(realpath) || realpath == buf)
-		return ERR_PTR(-ENOENT);
-
-	const struct cred *c = nullptr;
-	if (cred && cred != current_cred())
-		c = override_creds(cred);
-
-	struct file *f = filp_open(realpath, flags, 0);
-	if (c)
-		revert_creds(c);
-
-	return f;
-}
-#define dentry_open ksu_dentry_open_filp
+#define dentry_open ksu_dentry_open
 #endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 9, 0)
@@ -221,7 +254,6 @@ __weak int path_mount(const char *dev_name, struct path *path, const char *type_
 #endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(5, 9, 0)
-
 static __always_inline int ksu_sys_umount(char __user *name, int flags);
 __weak int path_umount(struct path *path, int flags)
 {
@@ -237,10 +269,8 @@ __weak int path_umount(struct path *path, int flags)
 	ret = ksu_sys_umount((char __user *)usermnt, flags);
 	set_fs(old_fs);
 
-	// release ref here! user_path_at increases it
-	// then only cleans for itself
-out:
-	path_put(path);
+out: // release ref here! user_path_at increases it then only cleans for itself
+	path_put(path); 
 	return ret;
 }
 #endif // < 5.9
@@ -417,7 +447,7 @@ __weak void groups_sort(struct group_info *group_info) { } // no-op
 #endif // < 4.12 && !EPOLLIN
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION (3, 15, 0)
-#define task_ppid_nr(a) ({ (pid_t)sys_getppid(); })
+#define task_ppid_nr(__unused) ({ (pid_t)sys_getppid(); })
 #endif
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION (3, 17, 0)
@@ -445,8 +475,8 @@ __weak unsigned long vm_mmap(struct file *file, unsigned long addr, unsigned lon
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION (3, 9, 0)
 static inline int __must_check ksu_kref_get_unless_zero(struct kref *kref)
-{
-	return atomic_add_unless(&kref->refcount, 1, 0);
+{ 
+	return atomic_add_unless(&kref->refcount, 1, 0); 
 }
 #define kref_get_unless_zero ksu_kref_get_unless_zero
 #endif // < 3.9
@@ -472,8 +502,29 @@ static inline ksu_kuid_t current_euid() { return *(ksu_kuid_t *)(&current_cred()
 #endif // < 3.14
 
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3, 5, 0)
-static inline struct user_struct *ksu_alloc_uid(uid_t uid) { return alloc_uid(current_user_ns(), uid); }
-#define alloc_uid(uid) ksu_alloc_uid(ksu_get_uid_t(uid))
+static __nocfi struct user_struct *ksu_alloc_uid(uid_t uid)
+{
+	// old: struct user_struct *alloc_uid(struct user_namespace *ns, uid_t uid)
+	// new: struct user_struct *alloc_uid(kuid_t uid)
+	extern typeof(alloc_uid) alloc_uid;
+	static_assert(!!&alloc_uid);
+	assume((void *)&alloc_uid != nullptr);
+	if (!__builtin_types_compatible_p(typeof(alloc_uid), struct user_struct *(struct user_namespace *, uid_t)))
+		goto new_fn;
+
+	return ((struct user_struct *(*)(struct user_namespace *, uid_t))&alloc_uid)(current_user_ns(), uid);
+
+new_fn:;
+	/**
+	 * HACK: some kernels does NOT have kuid_t typedef, it wont compile.
+	 * either way uid_t == kuid_t == ksu_kuid_t, so use a dummy struct
+	 * doesn't rly matter, just explicitness, an excuse to use ksu_kuid_t
+	 */
+	struct user_struct *(*fn_new)(ksu_kuid_t uid) = (void *)&alloc_uid;
+	ksu_kuid_t kuid = { .val = uid };
+	return fn_new(kuid);
+}
+#define alloc_uid(kuid) ksu_alloc_uid(ksu_get_uid_t(kuid))
 #endif
 
 #if defined(CONFIG_KEYS) && LINUX_VERSION_CODE < KERNEL_VERSION(5, 2, 0)

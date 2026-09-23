@@ -119,7 +119,7 @@ FILLDIR_RETURN_TYPE my_actor(MY_ACTOR_CTX_ARG, const char *name,
 		strscpy(data->dirpath, dirpath, DATA_PATH_LEN);
 		data->depth = my_ctx->depth - 1;
 		list_add_tail(&data->list, my_ctx->data_path_list);
-
+		
 		return FILLDIR_ACTOR_CONTINUE;
 	}
 
@@ -189,7 +189,7 @@ static noinline void search_manager(const char *path, int depth, struct list_hea
 					goto skip_iterate;
 				}
 			}
-
+				
 			if (ksu_get_magic(file) != data_app_magic) {
 				pr_info("%s: skip: %s magic: 0x%lx expected: 0x%lx\n", __func__, pos->dirpath, ksu_get_magic(file), data_app_magic);
 				filp_close(file, NULL);
@@ -333,7 +333,7 @@ out:
 	list_for_each_entry_safe (np, n, &uid_list, list) {
 		list_del(&np->list);
 		kfree(np);
-	}
+	}	
 }
 
 static DEFINE_MUTEX(throne_tracker_mutex);
@@ -365,7 +365,7 @@ test_list:
 		pr_info("throne_tracker: rename not finished! retry!\n");
 
 	msleep(20); // yield
-	goto test_list;
+	goto test_list;	
 
 start_tt:
 	// lessen that window where user opens manager right away, yet its not crowned
@@ -388,7 +388,7 @@ void track_throne(bool prune_only)
 first_run:
 	if (guarded_mutex_lock(&throne_tracker_mutex))
 		throne_tracker_fn(prune_only);
-
+	
 	label = &&threaded;
 	return;
 threaded:

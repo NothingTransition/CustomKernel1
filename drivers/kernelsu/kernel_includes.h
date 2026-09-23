@@ -286,7 +286,7 @@ typedef typeof(nullptr) nullptr_t;
  *
  * from: OPENSSL_cleanse, volatile function pointer prevents memset optimization
  * https://github.com/openssl/openssl/blob/master/crypto/mem_clr.c
- *
+ * 
  */
 static __nocfi __always_inline void *memset_explicit(void *s, int c, size_t count)
 {
@@ -311,7 +311,7 @@ static __nocfi __always_inline void *memset_explicit(void *s, int c, size_t coun
 
 /**
  * C2y's countof
- *
+ * 
  * - this is literally like kernel's ARRAY_SIZE
  */
 #if __has_feature(c_countof) || __has_extension(c_countof)
@@ -381,7 +381,7 @@ typedef unsigned __int128 uint128_t;
 
 /**
  * __attribute__((__cleanup__()))
- * - pseudo-raii / defer / scoped cleanup on C
+ * - pseudo-raii / defer / scoped cleanup on C 
  *
  * NOTE: passes address of variable attributed to fn()
  */
@@ -464,7 +464,7 @@ static inline void kfree_byref(void *buf) { kfree(*(void **)buf); }
 
 /**
  * disallow usage of old string functions removed on newer linux kernels
- *
+ * 
  * k7.2 deprecated strncpy, torvalds/linux 079a028
  * k6.8 deprecated strlcpy, torvalds/linux d262700
  *
@@ -495,7 +495,7 @@ static inline void kfree_byref(void *buf) { kfree(*(void **)buf); }
 /**
  * enforce minimum compiler version
  * if youre reading this: go and update your compiler
- * gcc 4.9 / 5.1 should have no problems on 3.x kernels
+ * gcc 4.9 / 5.1 should have no problems on 3.x kernels 
  * go here: https://developer.arm.com/Downloads/-/Legacy%20Linaro%20GNU%20Toolchains
  *
  * NOTE: no need to actually enforce clang, minimum clang for gnu11 with _Generic is 3.1

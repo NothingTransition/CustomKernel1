@@ -16,7 +16,7 @@ family — A-only partitioning, boot header v2, LZ4 ramdisk.
 |---|---|---|
 | Base | 4.14.357-openela | Stormbreaker sm6250 tree, final 4.14 stable |
 | Toolchain | Clang/LLVM 18 | full `LLVM=1`, no GCC |
-| KernelSU | Backslashxx v3.3.0 | manually integrated, supercall (no kprobes), built-in |
+| KernelSU | Backslashxx v3.3.0-48 | manually integrated, supercall (no kprobes), built-in |
 | SUSFS | **v2.3.0** | full feature set, built-in |
 | NoMount | v2.0.0 | built-in |
 | Modules | signed | SHA512, unsigned modules load with taint (not rejected) |
@@ -45,7 +45,7 @@ complements SUSFS mount hiding.
 | File | What it is |
 |---|---|
 | `Stormbreaker-miatoll-KSU-SUSFS-NoMount-UNTESTED-*.zip` | **Flashable AnyKernel3 zip** (kernel + dtb + dtbo; keeps your ROM's ramdisk, preserves existing root) |
-| `KernelSU-manager.apk` | KernelSU manager app (Backslashxx v3.3.0) — install **after** flashing + booting |
+| `KernelSU-manager.apk` | KernelSU manager app (Backslashxx v3.3.0-48, matches kernel) — install **after** flashing + booting |
 | `BRENE-v0.0.68.zip` | SUSFS rules module — install inside the KSU manager, then reboot |
 | `NoMount-v2.0.0.zip` | NoMount userspace module — install inside the KSU manager, then reboot |
 
