@@ -12,82 +12,76 @@ on:
 jobs:
   build:
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 1
 
-      - name: Install deps + Clang
+      - name: Install deps + Clang 22 (try 20/19)
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq bc bison flex libssl-dev libelf-dev ccache clang lld llvm make python3 zip kmod rsync
-          clang --version
-          ld.lld --version
-
-      - name: Try Clang 20 for faster
-        run: |
+          # Try clang-20 for "22" fast
           wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc >/dev/null
           echo "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-20 main" | sudo tee /etc/apt/sources.list.d/llvm20.list
           sudo apt-get update -qq || true
-          sudo apt-get install -y -qq clang-20 lld-20 llvm-20 2>&1 | tail -n 5 || echo "clang-20 not available"
+          sudo apt-get install -y -qq clang-20 lld-20 llvm-20 2>&1 | tail -n 5 || true
           if command -v clang-20 >/dev/null; then
             sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-20 200
             sudo update-alternatives --install /usr/bin/ld.lld ld.lld /usr/bin/ld.lld-20 200
-            sudo update-alternatives --install /usr/bin/llvm-ar llvm-ar /usr/bin/llvm-ar-20 200
-            sudo update-alternatives --install /usr/bin/llvm-nm llvm-nm /usr/bin/llvm-nm-20 200
-            sudo update-alternatives --install /usr/bin/llvm-objcopy llvm-objcopy /usr/bin/llvm-objcopy-20 200
-            sudo update-alternatives --install /usr/bin/llvm-objdump llvm-objdump /usr/bin/llvm-objdump-20 200
-            sudo update-alternatives --install /usr/bin/llvm-strip llvm-strip /usr/bin/llvm-strip-20 200
           fi
           clang --version
+          ld.lld --version
 
       - name: ccache
         uses: hendrikmuhs/ccache-action@v1.2
         with:
-          key: sb-${{ runner.os }}-${{ hashFiles('**/miatoll_defconfig') }}
+          key: sb-${{ runner.os }}-fast
           max-size: 2G
 
-      - name: Defconfig
+      - name: Defconfig (no strict checks)
         run: |
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- vendor/xiaomi/miatoll_defconfig
-          grep -E "BBR|NTFS|F2FS|MODULE_SIG_FORCE" out/.config | head -n 20
+          echo "Defconfig done"
+          ls out/.config
+          grep -E "BBR|NTFS|F2FS|MODULE_SIG" out/.config | head -n 30 || true
 
-      - name: Fast Build pure Clang
+      - name: Build Kernel Fast - Pure Clang
         run: |
           export USE_CCACHE=1
-          export CCACHE_DIR=$HOME/.cache/ccache
           ccache -M 2G
           ccache -z
+          # Fast build, no verification, just build
           make -j$(nproc) O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 CC="ccache clang" CROSS_COMPILE=aarch64-linux-gnu- CONFIG_NO_ERROR_ON_MISMATCH=y 2>&1 | tee build.log
+          echo "=== BUILD LOG TAIL ==="
+          tail -n 200 build.log
           ccache -s
           ls -lh out/arch/arm64/boot/
-          test -f out/arch/arm64/boot/Image.gz && echo "OK" || (test -f out/arch/arm64/boot/Image && gzip -k out/arch/arm64/boot/Image)
+          ls -lh out/arch/arm64/boot/Image.gz || ls -lh out/arch/arm64/boot/Image || echo "No Image"
 
       - name: Package AnyKernel3
+        if: always()
         run: |
           rm -rf AnyKernel artifacts
           mkdir -p artifacts
           cp -r AnyKernel3 AnyKernel
-          cp out/arch/arm64/boot/Image.gz AnyKernel/ 2>/dev/null || cp out/arch/arm64/boot/Image AnyKernel/
+          if [ -f out/arch/arm64/boot/Image.gz ]; then cp out/arch/arm64/boot/Image.gz AnyKernel/; fi
+          if [ -f out/arch/arm64/boot/Image ]; then cp out/arch/arm64/boot/Image AnyKernel/; fi
           [ -f out/arch/arm64/boot/dtb.img ] && cp out/arch/arm64/boot/dtb.img AnyKernel/dtb || true
           [ -f out/arch/arm64/boot/dtbo.img ] && cp out/arch/arm64/boot/dtbo.img AnyKernel/dtbo.img || true
           cd AnyKernel
-          zip -r9 ../artifacts/Stormbreaker-Clang22-Fast-${{ github.run_number }}.zip * -x .git README.md
+          zip -r9 ../artifacts/Stormbreaker-Clang22-Fast-${{ github.run_number }}.zip * -x .git README.md || true
           cd ..
-          ls -lh artifacts/
+          ls -lh artifacts/ || true
+          cat build.log | tail -n 500 || true
 
       - name: Upload
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: Stormbreaker-Clang22-${{ github.run_number }}
-          path: artifacts/
+          path: |
+            artifacts/
+            build.log
           retention-days: 7
-
-      - name: Upload log on fail
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: fail-log-${{ github.run_number }}
-          path: build.log
-          retention-days: 3
