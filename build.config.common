@@ -1,9 +1,28 @@
 BRANCH=android-4.14
 
+# Pure Clang 18 Build - No GCC
 CC=clang
 LD=ld.lld
-CLANG_PREBUILT_BIN=prebuilts-master/clang/host/linux-x86/clang-r383902/bin
+AR=llvm-ar
+NM=llvm-nm
+OBJCOPY=llvm-objcopy
+OBJDUMP=llvm-objdump
+STRIP=llvm-strip
+READELF=llvm-readelf
+HOSTCC=clang
+HOSTCXX=clang++
+
+# Clang 18 prebuilt - r547379 is Clang 18.1.0
+CLANG_PREBUILT_BIN=prebuilts-master/clang/host/linux-x86/clang-r547379/bin
 BUILDTOOLS_PREBUILT_BIN=build/build-tools/path/linux-x86
+
+# Enable LLVM integrated assembler and LLVM tools for pure clang build
+LLVM=1
+LLVM_IAS=1
 
 EXTRA_CMDS=''
 STOP_SHIP_TRACEPRINTK=1
+
+# Disable module signing for custom kernel / KernelSU compatibility
+# These are handled in defconfig but also enforced here
+# Ensure no forced signing

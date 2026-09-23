@@ -1,8 +1,12 @@
 ARCH=arm64
 
+# Pure Clang 18 - no GCC dependency
 CLANG_TRIPLE=aarch64-linux-gnu-
-CROSS_COMPILE=aarch64-linux-androidkernel-
-LINUX_GCC_CROSS_COMPILE_PREBUILTS_BIN=prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/bin
+CROSS_COMPILE=aarch64-linux-gnu-
+CROSS_COMPILE_ARM32=arm-linux-gnueabi-
+
+# For pure LLVM build, we don't need GCC prebuilts
+# LINUX_GCC_CROSS_COMPILE_PREBUILTS_BIN is intentionally removed for pure clang
 
 FILES="
 arch/arm64/boot/Image
