@@ -2,7 +2,7 @@ name: Build Stormbreaker Kernel - Clang 18 Fast
 
 # Cancel previous runs when new push happens - makes CI fast
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: stormbreaker-miatoll-${{ github.ref }}
   cancel-in-progress: true
 
 on:
