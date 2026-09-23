@@ -271,18 +271,23 @@ jobs:
           path: release-assets
 
       - name: Fetch manager APK and companion modules
+        env:
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          curl -fL --retry 5 --retry-delay 5 \
-            -o release-assets/KernelSU-manager.apk \
-            "https://github.com/backslashxx/KernelSU/releases/download/v3.3.0-47/KernelSU_v3.3.0-47_32648-release.apk"
-          curl -fL --retry 5 --retry-delay 5 \
-            -o release-assets/BRENE-v0.0.68.zip \
-            "https://github.com/rrr333nnn333/BRENE/releases/download/v0.0.68/BRENE-v0.0.68.zip"
-          curl -fL --retry 5 --retry-delay 5 \
-            -o release-assets/NoMount-v2.0.0.zip \
-            "https://github.com/maxsteeel/nomount/releases/download/v2.0.0/NoMount-v2.0.0-release.zip"
+          # gh release download (authenticated) avoids anonymous rate limits
+          # and follows asset redirects; exact tags pinned for reproducibility.
+          gh release download v3.3.0-48 -R backslashxx/KernelSU \
+            -p 'KernelSU_v3.3.0-48_*-release.apk' -D release-assets
+          mv release-assets/KernelSU_v3.3.0-48_*-release.apk \
+             release-assets/KernelSU-manager.apk
+          gh release download v0.0.68 -R rrr333nnn333/BRENE \
+            -p 'BRENE-v0.0.68.zip' -D release-assets
+          gh release download v2.0.0 -R maxsteeel/nomount \
+            -p 'NoMount-v2.0.0-release.zip' -D release-assets
+          mv release-assets/NoMount-v2.0.0-release.zip \
+             release-assets/NoMount-v2.0.0.zip
           # sanity: all three must be zip/apk archives
           head -c2 release-assets/KernelSU-manager.apk | grep -q PK
           head -c2 release-assets/BRENE-v0.0.68.zip | grep -q PK
