@@ -36,7 +36,7 @@ config KSU_SUSFS
     depends on THREAD_INFO_IN_TASK
     default y
     help
-        Patch and Enable SUSFS v2.3.0 to kernel with KernelSU-Next v3.4.0
+        Patch and Enable SUSFS v2.3.0 to kernel with KernelSU-Next v3.3.0
 
 config KSU_SUSFS_SUS_PATH
     bool "Enable to hide suspicious path"
