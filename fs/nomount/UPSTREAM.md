@@ -8,3 +8,25 @@
 
 The upstream source is vendored rather than linked so kernel builds remain
 reproducible and do not fetch or modify source during Kbuild.
+
+## Local deviation from upstream v2.0.0: SRCU-correct freeing
+
+Upstream frees `nm_iop`, `nm_fop` and `nomount_dir_node` objects via classic
+`call_rcu()`, while all readers of those objects hold `nomount_srcu`
+(`srcu_read_lock`). Classic RCU grace periods do not cover SRCU readers, so a
+reader could still dereference an object after it is reclaimed (theoretical
+use-after-free, openable only during rule clear-all / restore / shadow
+replacement racing an active directory read).
+
+All six free sites in this tree therefore use
+`call_srcu(&nomount_srcu, ...)` instead, so reclamation waits for the same
+grace-period domain the readers hold:
+
+- `nm_destroy_virtual_inode()` (tagged virtual dir node)
+- `nm_destroy_hijacked_inode()` (nm_iop, nm_fop, dir_node)
+- `nomount_prune_empty_virtual_dirs()` (detached dir node)
+- `__nomount_add_rule()` shadow path (replaced rule's dir node)
+
+Callbacks are unchanged and remain non-sleeping (`kmem_cache_free`, `kfree`,
+with the sleeping `iput()` already deferred to a workqueue), which is safe in
+SRCU callback context. No behavioral change in normal operation.

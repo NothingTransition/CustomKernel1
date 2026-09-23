@@ -162,7 +162,7 @@ static inline void nm_destroy_virtual_inode(struct inode *inode)
     if (info->dir_node) {
         WRITE_ONCE(info->dir_node->v_inode, NULL);
         if (READ_ONCE(info->dir_node->_tag_ptr) == 1UL)
-            call_rcu(&info->dir_node->rcu, nm_dir_rcu_free);
+            call_srcu(&nomount_srcu, &info->dir_node->rcu, nm_dir_rcu_free);
     }
 
     kmem_cache_free(nm_inode_cachep, info);
@@ -175,16 +175,22 @@ static inline void nm_destroy_hijacked_inode(struct inode *inode, bool restore)
     struct nm_fop *nm_fop = __get_nm(inode->i_fop, struct nm_fop, fake_fop, iterate_shared, nomount_hijacked_iterate_dir);
     struct nomount_dir_node *dir_node = nm_iop ? nm_iop->dir_node : (nm_fop ? nm_fop->dir_node : NULL);
 
+    /* Readers of nm_iop/nm_fop/dir_node hold nomount_srcu (see lookup,
+     * iterate_dir, d_revalidate paths). Freeing via classic call_rcu()
+     * would wait for the wrong grace-period domain and could reclaim the
+     * objects while an SRCU reader still dereferences them. Use call_srcu
+     * on the same domain the readers hold.
+     */
     if (nm_iop) {
         if (restore) smp_store_release(&inode->i_op, nm_iop->orig_iop);
-        call_rcu(&nm_iop->rcu, nm_iop_rcu_free);
+        call_srcu(&nomount_srcu, &nm_iop->rcu, nm_iop_rcu_free);
     }
     if (nm_fop) {
         if (restore) smp_store_release(&inode->i_fop, nm_fop->orig_fop);
-        call_rcu(&nm_fop->rcu, nm_fop_rcu_free);
+        call_srcu(&nomount_srcu, &nm_fop->rcu, nm_fop_rcu_free);
     }
     if (dir_node && !(dir_node->_tag_ptr & 1UL))
-        call_rcu(&dir_node->rcu, nm_dir_rcu_free);
+        call_srcu(&nomount_srcu, &dir_node->rcu, nm_dir_rcu_free);
 }
 
 struct nomount_proxy_ctx {
@@ -1270,7 +1276,7 @@ static void nomount_prune_empty_virtual_dirs(struct nomount_dir_node *dir_node, 
         if (!(owner->flags & NM_FLAG_VIRTUAL_DIR)) {
             owner->this_dir = NULL;
             if (READ_ONCE(dir_node->v_inode)) WRITE_ONCE(dir_node->_tag_ptr, 1UL);
-            else nm_detach_dir_node(dir_node), call_rcu(&dir_node->rcu, nm_dir_rcu_free);
+            else nm_detach_dir_node(dir_node), call_srcu(&nomount_srcu, &dir_node->rcu, nm_dir_rcu_free);
             break;
         }
 
@@ -1375,7 +1381,7 @@ static int __nomount_add_rule(const char *v_path, const char *r_path, u16 v_len,
     down_write(&nomount_rwsem);
     if ((existing = nm_tree_search_exact(rule->v_hash, v_len, nm_get_vpath(rule), target_uid))) {
         if (existing->this_dir) {
-            if (rule->this_dir) call_rcu(&rule->this_dir->rcu, nm_dir_rcu_free);
+            if (rule->this_dir) call_srcu(&nomount_srcu, &rule->this_dir->rcu, nm_dir_rcu_free);
             rule->this_dir = existing->this_dir;
             if (rule->this_dir->_tag_ptr & 1UL) rule->this_dir->_tag_ptr = (unsigned long)rule | 1UL;
             existing->this_dir = NULL;
