@@ -693,7 +693,13 @@ static struct dentry *nm_dir_lookup(struct inode *dir, struct dentry *dentry, un
                 if (likely(new_inode)) {
                     nomount_hijack_dentry_ops(dentry);
                     res = d_splice_alias(new_inode, dentry);
-                    if (res) nomount_hijack_dentry_ops(res);
+                    /* d_splice_alias() already dropped the new inode ref on its
+                     * error paths (see fs/dcache.c), so no iput() here; but never
+                     * hijack dentry ops on an ERR_PTR, and on NULL success the
+                     * passed dentry was the one instantiated. */
+                    if (IS_ERR(res))
+                        return res;
+                    nomount_hijack_dentry_ops(res ? res : dentry);
                     return res;
                 }
             }

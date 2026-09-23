@@ -135,6 +135,7 @@ menu "KernelSU - SUSFS"
 
 config KSU_SUSFS
 	bool "SUSFS support"
+	depends on FUSE_FS
 	default n
 	help
 	  Enable the SUSFS v2.3.0 non-GKI filesystem-hiding compatibility

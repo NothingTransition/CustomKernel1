@@ -101,17 +101,17 @@ static inline bool susfs_is_current_proc_umounted_app(void) {
 }
 
 #define SUSFS_IS_INODE_SUS_MAP(inode) \
-		inode && \
-		unlikely(test_bit(AS_FLAGS_SUS_MAP, &inode->i_state)) && \
+		(inode) && \
+		unlikely(test_bit(AS_FLAGS_SUS_MAP, &(inode)->i_state)) && \
 		susfs_is_current_proc_umounted_app()
 
 #define SUSFS_IS_INODE_OPEN_REDIRECT_WITHOUT_UID_CHECK(inode) \
-		inode && \
-		unlikely(test_bit(AS_FLAGS_OPEN_REDIRECT, &inode->i_state))
+		(inode) && \
+		unlikely(test_bit(AS_FLAGS_OPEN_REDIRECT, &(inode)->i_state))
 
 #define SUSFS_IS_INODE_OPEN_REDIRECT(inode) \
-		inode && \
-		unlikely(test_bit(AS_FLAGS_OPEN_REDIRECT, &inode->i_state)) && \
+		(inode) && \
+		unlikely(test_bit(AS_FLAGS_OPEN_REDIRECT, &(inode)->i_state)) && \
 		susfs_is_current_proc_umounted_app()
 
 #endif // #ifndef KSU_SUSFS_DEF_H

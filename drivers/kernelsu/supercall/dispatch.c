@@ -72,9 +72,11 @@ static int do_report_event(void __user *arg)
 
 	switch (cmd.event) {
 	case EVENT_POST_FS_DATA: {
-		static bool post_fs_data_lock = false;
-		if (!post_fs_data_lock) {
-			post_fs_data_lock = true;
+		/* one-shot guard against concurrent EVENT_POST_FS_DATA delivery:
+		 * plain bool read-modify-write was non-atomic (benign in practice,
+		 * but the on_post_fs_data() side effects must run exactly once). */
+		static atomic_t post_fs_data_done = ATOMIC_INIT(0);
+		if (atomic_cmpxchg(&post_fs_data_done, 0, 1) == 0) {
 			pr_info("post-fs-data triggered\n");
 			on_post_fs_data();
 #ifdef CONFIG_KSU_SUSFS

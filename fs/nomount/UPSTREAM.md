@@ -30,3 +30,11 @@ grace-period domain the readers hold:
 Callbacks are unchanged and remain non-sleeping (`kmem_cache_free`, `kfree`,
 with the sleeping `iput()` already deferred to a workqueue), which is safe in
 SRCU callback context. No behavioral change in normal operation.
+
+## d_splice_alias error-path hardening (2026-09-23)
+
+- Virtual-inode site 2 (lookup/readdir): d_splice_alias() already drops the
+  new inode reference on its error paths in 4.14 (see fs/dcache.c), so no
+  iput() was added; but the site no longer calls nomount_hijack_dentry_ops()
+  on an ERR_PTR, and on NULL success it now hijacks the instantiated dentry,
+  matching site 1 semantics.

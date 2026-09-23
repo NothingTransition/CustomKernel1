@@ -46,3 +46,16 @@ branch-link hooks are intentionally disabled in the Miatoll defconfig.
     (susfs_show_map_vma_spoofer) with the new v2.3.0 app-uid gating.
   - `get_anon_bdev()` KSU minor-dev hook adapted to the 4.14 ida API
     (ida_pre_get/ida_get_new_above).
+
+## Audit hardening batch (2026-09-23)
+
+- fs/statfs.c: ported upstream susfs fix 769e31fbe ("SUS_KSTAT: Fix wrong
+  spoofing logic in vfs_statfs()") — the KSTAT path now returns the spoofed
+  kstatfs as-is (f_flags no longer recalculated from the real mount); the
+  SUS_MOUNT same-mount path recalculates f_flags from the caller's mount;
+  the now-unused bypass_orig_flow label in vfs_statfs was removed.
+- include/linux/susfs_def.h: SUSFS_IS_INODE_* macro arguments parenthesized.
+- supercall/dispatch.c: EVENT_POST_FS_DATA one-shot guard converted from a
+  non-atomic bool to atomic_cmpxchg (side effects must run exactly once).
+- Kconfig: KSU_SUSFS now depends on FUSE_FS (fs/susfs.c includes
+  fuse/fuse_i.h and links get_fuse_inode(), which needs built-in FUSE).
