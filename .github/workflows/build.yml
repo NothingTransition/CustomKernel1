@@ -191,6 +191,23 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+      - name: Upload build.log to gist for debugging (bypass Azure blob TLS issue)
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set +e
+          echo "Uploading build.log to gist..."
+          # Create gist with build.log tail
+          tail -n 1000 build.log > build-tail.log
+          gh gist create build-tail.log --public -d "miatoll build failure ${{ github.run_number }} tail" 2>&1 | tee gist-url.txt || true
+          cat gist-url.txt || true
+          # Also try to upload full log split
+          grep -Ei 'error:|undefined reference|No rule to make target|Error [0-9]+' build.log | tail -n 200 > build-errors.log
+          gh gist create build-errors.log --public -d "miatoll build errors ${{ github.run_number }}" 2>&1 | tee gist-errors-url.txt || true
+          cat gist-errors-url.txt || true
+          set -e
+
       - name: Verify build products
         shell: bash
         run: |
