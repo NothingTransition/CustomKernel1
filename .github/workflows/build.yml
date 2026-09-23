@@ -1,6 +1,5 @@
 name: Build Stormbreaker Kernel - Clang 18 Fast
 
-# Cancel previous runs when new push happens - makes CI fast
 concurrency:
   group: stormbreaker-miatoll-${{ github.ref }}
   cancel-in-progress: true
@@ -11,69 +10,69 @@ on:
       - a
       - arena/**
       - main
-      - master
   workflow_dispatch:
 
 jobs:
   build:
     runs-on: ubuntu-22.04
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
 
-      - name: Install deps (fast)
+      - name: Install Clang 18 + deps (fast apt)
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq bc bison flex libssl-dev libelf-dev ccache git zip python3 lld
-          echo "Deps done"
+          sudo apt-get install -y -qq wget lsb-release software-properties-common gnupg
+          # Add LLVM apt repo for clang 18
+          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc
+          echo "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-18 main" | sudo tee /etc/apt/sources.list.d/llvm.list
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            clang-18 lld-18 llvm-18 \
+            bc bison flex libssl-dev libelf-dev \
+            ccache git zip python3 \
+            binutils-aarch64-linux-gnu \
+            gcc-aarch64-linux-gnu
+          clang-18 --version
+          ld.lld-18 --version
+          # Symlink clang-18 as clang for kernel build
+          sudo update-alternatives --install /usr/bin/clang clang /usr/bin/clang-18 100
+          sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-18 100
+          sudo update-alternatives --install /usr/bin/ld.lld ld.lld /usr/bin/ld.lld-18 100
+          sudo update-alternatives --install /usr/bin/llvm-ar llvm-ar /usr/bin/llvm-ar-18 100
+          sudo update-alternatives --install /usr/bin/llvm-nm llvm-nm /usr/bin/llvm-nm-18 100
+          sudo update-alternatives --install /usr/bin/llvm-objcopy llvm-objcopy /usr/bin/llvm-objcopy-18 100
+          sudo update-alternatives --install /usr/bin/llvm-objdump llvm-objdump /usr/bin/llvm-objdump-18 100
+          sudo update-alternatives --install /usr/bin/llvm-strip llvm-strip /usr/bin/llvm-strip-18 100
+          sudo update-alternatives --install /usr/bin/llvm-readelf llvm-readelf /usr/bin/llvm-readelf-18 100
+          clang --version
+          ld.lld --version
 
       - name: Set up ccache
         uses: hendrikmuhs/ccache-action@v1.2
         with:
-          key: ${{ runner.os }}-stormbreaker-${{ hashFiles('**/miatoll_defconfig') }}
-          max-size: 3G
-          save: true
+          key: stormbreaker-clang18-${{ hashFiles('**/miatoll_defconfig') }}
+          max-size: 2G
 
-      - name: Cache Clang 18
-        id: cache-clang
-        uses: actions/cache@v4
-        with:
-          path: clang
-          key: clang-r547379-fast-${{ runner.os }}
-          restore-keys: clang-r547379-
-
-      - name: Download Clang 18 (fast)
-        if: steps.cache-clang.outputs.cache-hit != 'true'
-        run: |
-          rm -rf clang
-          echo "Downloading Clang 18.1.0 r547379..."
-          # Fast clone with depth 1, single branch
-          git clone --depth=1 --single-branch https://github.com/crdroidandroid/android_prebuilts_clang_host_linux-x86_clang-r547379 clang || \
-          git clone --depth=1 --single-branch https://github.com/LineageOS/android_prebuilts_clang_host_linux-x86_clang-r547379 clang
-          clang/bin/clang --version
-
-      - name: Build Kernel - Pure Clang 18 Fast
+      - name: Build Kernel - Pure Clang 18 (apt, no GCC prebuilt)
         run: |
           export ARCH=arm64
           export SUBARCH=arm64
           export KBUILD_BUILD_HOST=android-build
           export KBUILD_BUILD_USER=kardebayan
-          export PATH=$PWD/clang/bin:$PATH
           export USE_CCACHE=1
           export CCACHE_SLOPPINESS="pch_defines,time_macros"
-          export CCACHE_COMPRESS=1
-          ccache -M 3G
+          ccache -M 2G
           ccache -z
 
-          # Fast defconfig
           make O=out ARCH=arm64 vendor/xiaomi/miatoll_defconfig
+          echo "=== Defconfig OK ==="
+          grep -E "MODULE_SIG|BBR|F2FS|KPROBES" out/.config | head -n 20
 
-          echo "=== Fast Clang 18 Build ==="
-          # Use ccache + clang, LLVM=1 LLVM_IAS=1, no GCC
-          # -j$(nproc) for speed, KCFLAGS for no debug
+          echo "=== Fast Clang 18 Build (apt) ==="
           make -j$(nproc --all) O=out \
             ARCH=arm64 \
             CC="ccache clang" \
@@ -85,19 +84,19 @@ jobs:
             OBJCOPY="llvm-objcopy" \
             OBJDUMP="llvm-objdump" \
             STRIP="llvm-strip" \
+            READELF="llvm-readelf" \
             CLANG_TRIPLE="aarch64-linux-gnu-" \
             CROSS_COMPILE="aarch64-linux-gnu-" \
             CROSS_COMPILE_ARM32="arm-linux-gnueabi-" \
             LLVM=1 \
             LLVM_IAS=1 \
             CONFIG_NO_ERROR_ON_MISMATCH=y \
-            KBUILD_BUILD_TIMESTAMP="$(date)" \
             2>&1 | tee out/build.log
 
-          echo "=== Build stats ==="
           ccache -s
           ls -lh out/arch/arm64/boot/
-          ls -lh out/arch/arm64/boot/Image* || true
+          [ -f out/arch/arm64/boot/Image.gz ] && echo "Image.gz OK" || ( [ -f out/arch/arm64/boot/Image ] && gzip -k out/arch/arm64/boot/Image && echo "Image gzipped" )
+          tail -n 50 out/build.log
 
       - name: Package AnyKernel3
         run: |
@@ -106,14 +105,12 @@ jobs:
           ZIMAGE=out/arch/arm64/boot/Image.gz
           [ -f "$ZIMAGE" ] || ZIMAGE=out/arch/arm64/boot/Image
           [ -f "$ZIMAGE" ] || (echo "No image!" && exit 1)
-          echo "Image: $ZIMAGE $(du -h $ZIMAGE)"
+          du -h $ZIMAGE
 
-          # Use local AnyKernel3 folder (already normalized)
           rm -rf AnyKernel
           cp -r AnyKernel3 AnyKernel
           cp $ZIMAGE AnyKernel/
-          # Remove placeholder files from zip root if any
-          rm -f AnyKernel/STRUCTURE.md 2>/dev/null || true
+          rm -f AnyKernel/STRUCTURE.md
 
           cd AnyKernel
           zip -r9 Stormbreaker-miatoll-${TANGGAL}-Clang18-Fast.zip * -x .git README.md *placeholder .placeholder
@@ -125,8 +122,7 @@ jobs:
         with:
           name: Stormbreaker-miatoll-${{ env.TANGGAL }}-Clang18
           path: AnyKernel/*.zip
-          retention-days: 7
-          if-no-files-found: error
+          retention-days: 14
 
       - name: Upload Log on Fail
         if: failure()
