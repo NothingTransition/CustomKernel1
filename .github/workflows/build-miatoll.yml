@@ -253,7 +253,7 @@ jobs:
           retention-days: 90
 
   release:
-    name: Publish untested pre-release
+    name: Publish pre-release
     needs: build
     if: success()
     runs-on: ubuntu-24.04
@@ -302,7 +302,7 @@ jobs:
             echo "> Built from commit \`${GITHUB_SHA}\` (run #${GITHUB_RUN_NUMBER}) on $(date -u '+%Y-%m-%d %H:%M UTC')."
             echo
           } > release-notes.md
-          cat RELEASE_NOTES_UNTESTED.md >> release-notes.md
+          cat RELEASE_NOTES.md >> release-notes.md
 
       - name: Create/replace pre-release
         env:
@@ -310,14 +310,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          TAG="untested-prerelease"
+          TAG="stormbreaker-curtana"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release delete "$TAG" --yes --cleanup-tag
           fi
           gh release create "$TAG" \
             --prerelease \
             --target "$GITHUB_SHA" \
-            --title "UNTESTED PRE-RELEASE — Stormbreaker KSU + SUSFS v2.3.0 + NoMount (curtana / Infinity X)" \
+            --title "Stormbreaker — KernelSU v3.3.0-48 + SUSFS v2.3.0 + NoMount + BBR (curtana / Infinity X)" \
             --notes-file release-notes.md \
             release-assets/Stormbreaker-miatoll-*.zip \
             release-assets/KernelSU-manager.apk \

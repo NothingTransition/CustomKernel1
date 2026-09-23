@@ -1,0 +1,49 @@
+# Stormbreaker — curtana (Redmi Note 9 Pro / 9S) · AOSP Android 16 (Infinity X)
+
+Linux 4.14.357-openela · built with Clang/LLVM 18 · A-only flash
+
+## Features
+
+### Root & control
+- KernelSU v3.3.0-48 — built-in, supercall-based (no kprobes, no daemon, no /su binary)
+- KernelSU manager app bundled with the release, version-matched to the kernel
+
+### Hiding stack
+- **SUSFS v2.3.0** — full feature set:
+  - sus_path (+ looped variant) — hide configured paths
+  - sus_mount — hide configured mounts per app
+  - sus_kstat — spoof file metadata
+  - uname spoofing
+  - cmdline / bootconfig spoofing
+  - open_redirect — redirect file opens
+  - sus_map — /proc/maps and fdinfo spoofing
+  - SELinux context hiding + KSU/SUSFS symbol hiding
+  - AVC log spoofing
+- **NoMount v2.0.0** — per-app directory hiding via keyring rules
+- **BRENE v0.0.68** module bundled — SUSFS rules control panel
+
+### Networking
+- **TCP BBR** congestion control — compiled in and set as the system default (CUBIC still available)
+- BPF / eBPF support (syscall + JIT)
+
+### Filesystems & compatibility
+- EROFS support
+- NTFS support
+- Loadable module support with SHA512 signature verification (unsigned modules load with taint)
+- Ships kernel + dtb + dtbo; preserves your ROM's ramdisk and existing root setup
+
+## Assets
+
+| File | What it is |
+|---|---|
+| `Stormbreaker-miatoll-*.zip` | Flashable AnyKernel3 zip (kernel + dtb + dtbo) |
+| `KernelSU-manager.apk` | KernelSU manager app v3.3.0-48 — install **after** flashing + booting |
+| `BRENE-v0.0.68.zip` | SUSFS rules module — install inside the KSU manager, then reboot |
+| `NoMount-v2.0.0.zip` | NoMount module — install inside the KSU manager, then reboot |
+
+## Install
+
+1. Flash the zip.
+2. Boot the ROM.
+3. Install `KernelSU-manager.apk`.
+4. In the manager: install the BRENE and NoMount modules, then reboot.
