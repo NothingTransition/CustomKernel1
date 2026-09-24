@@ -1,16 +1,39 @@
 # SUSFS provenance and compatibility
 
-- Upstream project: https://gitlab.com/simonpunk/susfs4ksu
-- Linux branch: `kernel-4.14`
-- Official branch commit observed during integration: `77905b5a071e6f3669e3b1814cea30147c0801da`
-- Imported source mirror: https://github.com/Star-Seven/susfs4ksu
-- Mirror commit used for the imported 4.14 patch/source: `d18028f2a8f3ba16a907bff0edc16376cf38e2bf`
-- Reported implementation version: `v1.5.5`
+Current implementation: **SUSFS v2.3.0** — non-GKI Linux 4.14 semantic port.
 
-The generic Linux 4.14 changes were adapted manually to this Qualcomm vendor
-kernel, and the userspace command ABI was bridged to the manually integrated
-Backslashxx KernelSU tree. The old upstream KernelSU patch was not applied
-wholesale because it targets a different KernelSU layout and API.
+## Provenance
 
-This implementation is older than the SUSFS v2.2.0-or-newer requirement stated
-by BRENE. It must not be represented as BRENE-compatible.
+- Upstream project: https://gitlab.com/simonpunk/susfs4ksu (GKI branches)
+- Version-bump commit: `a64889c` ("fs: susfs: bump version to v2.3.0");
+  upstream kernel changes by simonpunk/sidex15, Sep 12-13 2026.
+- 4.14 semantic-port reference: https://github.com/star-star-dev/M62-backport
+  pull request #3 (merged 2026-09-22), built from the same upstream commit
+  series. Symbols unavailable on 4.14 (STATX_MNT_ID, zygote_next hooks,
+  kstat.mnt_id) are omitted as no-ops, matching that reference.
+- The userspace command ABI is bridged to the manually integrated Backslashxx
+  KernelSU tree over the supercall channel; the old upstream KernelSU patch
+  was not applied wholesale because it targets a different KernelSU layout
+  and API.
+
+## History
+
+- The original import (early 2026-09) came from the upstream `kernel-4.14`
+  branch (mirror: https://github.com/Star-Seven/susfs4ksu @ `d18028f`),
+  which reported **v1.5.5**. That lineage predated BRENE's v2.2.0+
+  requirement and is no longer present in this tree.
+- Later 2026-09: replaced by the v2.3.0 semantic port described above, with
+  local adaptations on top of the reference: NULL-safe sus_kstat fallbacks,
+  get_anon_bdev() KSU hook adapted to the 4.14 ida API
+  (ida_pre_get/ida_get_new_above), maps/fdinfo spoofing with v2.3.0 app-uid
+  gating, and the upstream vfs_statfs f_flags fix (769e31fbe).
+
+## Compatibility
+
+- SUSFS v2.3.0 **meets and exceeds** BRENE's stated v2.2.0-or-newer
+  requirement. BRENE v0.0.68 is fully compatible: its CMD_SUSFS_* command
+  set (v2.3.0 dialect) is served by this tree over the KSU supercall
+  channel, gated to root + KSU domain.
+- Validated on real hardware (curtana, Infinity X, Android 16): susfs
+  initializes at boot, BRENE rules apply, uname spoofing and sus mounts
+  behave as configured.

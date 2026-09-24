@@ -3,13 +3,20 @@
 This directory vendors the kernel component from:
 
 - Repository: https://github.com/backslashxx/KernelSU
-- Tag: `v3.3.0-51` (KSU_VERSION 32651)
+- Tag: `v3.3.0-51` (upstream kernel Makefile: 32651)
 - Commit: `d7e36bd05323224c88f105836ae6478b7ee07db9`
 - Note: at this tag upstream's manager APK reports 32653 while the kernel
-  tree reports 32651 (upstream's own skew); we mirror the kernel value.
+  tree reports 32651 (upstream's own skew). This tree aligns KSU_VERSION to
+  **32653** to lockstep with the shipped manager APK (project decision,
+  2026-09-24); future syncs must keep this alignment instead of taking the
+  upstream kernel value verbatim.
 
 ## Sync history
 
+- 2026-09-24: KSU_VERSION aligned 32651 -> 32653 so the kernel reports the
+  exact version of the shipped manager APK (kernel<->manager lockstep).
+  Docs refresh: fs/SUSFS_UPSTREAM.md rewritten — it still described the
+  pre-upgrade v1.5.5 import and wrongly claimed BRENE incompatibility.
 - 2026-09-24: manual sync `v3.3.0-48` -> `v3.3.0-51`. Taken upstream:
   `Makefile` (32649 -> 32651), `include/arch.h` (symbol table rework; only
   consumed by kprobe code that is not compiled in this tree -- CONFIG_KPROBES
