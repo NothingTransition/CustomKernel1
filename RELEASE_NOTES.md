@@ -33,6 +33,10 @@ Linux 4.14.357-openela · built with Clang/LLVM 18 · A-only flash
 - Loadable module support with SHA512 signature verification (unsigned modules load with taint)
 - Ships kernel + dtb + dtbo; preserves your ROM's ramdisk and existing root setup
 
+### Containers & Android 17 readiness
+- **Droidspaces-ready** (LXC-like containers): PID/IPC/USER namespaces, SYSVIPC, POSIX mqueue, devtmpfs, full cgroup set (device/pids/net_prio), nftables + NAT/bridge netfilter enabled per the official Droidspaces non-GKI fragment; cgroup v1 prefix compatibility patch applied
+- **Android 17 ready**: Android 17's bionic syscall surface is identical to Android 16's (274 syscalls, zero added); config audited against AOSP core kernel requirements — no new kernel features required
+
 ## Assets
 
 | File | What it is |
