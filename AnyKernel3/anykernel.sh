@@ -10,7 +10,7 @@ kernel.string=Stormbreaker KernelSU (SUSFS v2.3.0 + NoMount v2.0.0)
 kernel.compiler=Clang/LLVM 18 (LLVM=1, no GCC)
 kernel.made=NothingTransition CI
 kernel.version=4.14.357-openela
-message.word=UNTESTED PRE-RELEASE for curtana / AOSP Infinity X (A-only, boot header v2). Flash at your own risk.
+message.word=Stormbreaker stable release for curtana / AOSP Infinity X (A-only, boot header v2).
 do.devicecheck=1
 do.modules=0
 do.systemless=1

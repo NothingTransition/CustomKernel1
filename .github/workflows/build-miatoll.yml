@@ -234,7 +234,7 @@ jobs:
           (
             cd package
             zip -r9 \
-              "../artifacts/Stormbreaker-miatoll-KSU-SUSFS-NoMount-UNTESTED-${GITHUB_RUN_NUMBER}.zip" .
+              "../artifacts/Stormbreaker-miatoll-KSU-SUSFS-NoMount-${GITHUB_RUN_NUMBER}.zip" .
           )
 
           # Raw images + metadata alongside the flashable zip
@@ -253,7 +253,7 @@ jobs:
           retention-days: 90
 
   release:
-    name: Publish pre-release
+    name: Publish release
     needs: build
     if: success()
     runs-on: ubuntu-24.04
@@ -304,7 +304,7 @@ jobs:
           } > release-notes.md
           cat RELEASE_NOTES.md >> release-notes.md
 
-      - name: Create/replace pre-release
+      - name: Create/replace release
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -315,7 +315,6 @@ jobs:
             gh release delete "$TAG" --yes --cleanup-tag
           fi
           gh release create "$TAG" \
-            --prerelease \
             --target "$GITHUB_SHA" \
             --title "Stormbreaker — KernelSU v3.3.0-51 + SUSFS v2.3.0 + NoMount + BBR (curtana / Infinity X)" \
             --notes-file release-notes.md \

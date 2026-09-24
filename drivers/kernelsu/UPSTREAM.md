@@ -6,17 +6,18 @@ This directory vendors the kernel component from:
 - Tag: `v3.3.0-51` (upstream kernel Makefile: 32651)
 - Commit: `d7e36bd05323224c88f105836ae6478b7ee07db9`
 - Note: at this tag upstream's manager APK reports 32653 while the kernel
-  tree reports 32651 (upstream's own skew). This tree aligns KSU_VERSION to
-  **32653** to lockstep with the shipped manager APK (project decision,
-  2026-09-24); future syncs must keep this alignment instead of taking the
-  upstream kernel value verbatim.
+  tree reports 32651 (upstream's own skew); we mirror the kernel value
+  (32651) verbatim. A same-day 32653 alignment experiment was reverted on
+  2026-09-24; future syncs keep mirroring the upstream kernel value.
 
 ## Sync history
 
-- 2026-09-24: KSU_VERSION aligned 32651 -> 32653 so the kernel reports the
-  exact version of the shipped manager APK (kernel<->manager lockstep).
-  Docs refresh: fs/SUSFS_UPSTREAM.md rewritten — it still described the
-  pre-upgrade v1.5.5 import and wrongly claimed BRENE incompatibility.
+- 2026-09-24: KSU_VERSION reverted to 32651 (upstream kernel value) after a
+  same-day 32653 alignment experiment — maintainer decision to mirror
+  upstream verbatim again. Release flipped from pre-release to stable and
+  the UNTESTED marker removed from zip name and flash banner. Docs refresh
+  kept: fs/SUSFS_UPSTREAM.md rewritten to the v2.3.0 port (it had described
+  the pre-upgrade v1.5.5 import and wrongly claimed BRENE incompatibility).
 - 2026-09-24: manual sync `v3.3.0-48` -> `v3.3.0-51`. Taken upstream:
   `Makefile` (32649 -> 32651), `include/arch.h` (symbol table rework; only
   consumed by kprobe code that is not compiled in this tree -- CONFIG_KPROBES
