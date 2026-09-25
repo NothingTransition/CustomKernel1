@@ -168,13 +168,22 @@ jobs:
       - name: Publish failure excerpt to job summary
         if: failure()
         shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           {
             echo '## Build failure excerpt'
             echo '```'
-            grep -B3 -A12 -m 30 'error:' build.log 2>/dev/null || tail -n 120 build.log 2>/dev/null
+            grep -n -B3 -A12 -m 30 'error:' build.log 2>/dev/null || tail -n 120 build.log 2>/dev/null || echo '(build.log missing)'
             echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+          } > failure-excerpt.md
+          cat failure-excerpt.md >> "$GITHUB_STEP_SUMMARY"
+          payload=$(python3 -c 'import json,sys; print(json.dumps({"output":{"title":"Build failure excerpt","summary":open("failure-excerpt.md",encoding="utf-8",errors="replace").read()[:60000]}})')
+          crid=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/check-runs" --jq '.check_runs[] | select(.name=="Compile and verify") | .id' | head -1)
+          if [ -n "$crid" ]; then
+            echo "$payload" | gh api -X PATCH "repos/${GITHUB_REPOSITORY}/check-runs/${crid}" --input - >/dev/null \
+              && echo "check-run summary updated" || echo "check-run summary update failed"
+          fi
 
       - name: Verify build products and KernelSU linkage
         shell: bash
