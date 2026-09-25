@@ -554,7 +554,7 @@ SYSCALL_DEFINE3(pidfd_getfd, int, pidfd, int, fd, unsigned int, flags)
  * Return: On success, a cloexec pidfd is returned.
  *         On error, a negative errno number will be returned.
  */
-SYSCALL_DEFINE3(pidfd_open, int, pid, unsigned int, flags)
+SYSCALL_DEFINE3(pidfd_open, pid_t, pid, unsigned int, flags)
 {
 	int fd, ret;
 	struct pid *p;
