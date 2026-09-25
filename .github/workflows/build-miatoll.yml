@@ -165,6 +165,17 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+      - name: Publish failure excerpt to job summary
+        if: failure()
+        shell: bash
+        run: |
+          {
+            echo '## Build failure excerpt'
+            echo '```'
+            grep -B3 -A12 -m 30 'error:' build.log 2>/dev/null || tail -n 120 build.log 2>/dev/null
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Verify build products and KernelSU linkage
         shell: bash
         run: |
