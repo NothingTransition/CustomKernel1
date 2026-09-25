@@ -362,7 +362,8 @@ SYSCALL_DEFINE4(fallocate, int, fd, int, mode, loff_t, offset, loff_t, len)
  * We do this by temporarily clearing all FS-related capabilities and
  * switching the fsuid/fsgid around to the real ones.
  */
-SYSCALL_DEFINE3(faccessat, int, dfd, const char __user *, filename, int, mode)
+static int do_faccessat(int dfd, const char __user *filename, int mode,
+			int flags)
 {
 	const struct cred *old_cred;
 	struct cred *override_cred;
@@ -371,6 +372,11 @@ SYSCALL_DEFINE3(faccessat, int, dfd, const char __user *, filename, int, mode)
 	struct vfsmount *mnt;
 	int res;
 	unsigned int lookup_flags = LOOKUP_FOLLOW;
+
+	if (flags & AT_SYMLINK_NOFOLLOW)
+		lookup_flags &= ~LOOKUP_FOLLOW;
+	if (flags & AT_EMPTY_PATH)
+		lookup_flags |= LOOKUP_EMPTY;
 
 #ifdef CONFIG_KSU
 	extern int ksu_handle_faccessat(int *, const char __user **, int *,
@@ -385,17 +391,22 @@ SYSCALL_DEFINE3(faccessat, int, dfd, const char __user *, filename, int, mode)
 	if (!override_cred)
 		return -ENOMEM;
 
-	override_cred->fsuid = override_cred->uid;
-	override_cred->fsgid = override_cred->gid;
+	if (flags & AT_EACCESS) {
+		override_cred->fsuid = override_cred->euid;
+		override_cred->fsgid = override_cred->egid;
+	} else {
+		override_cred->fsuid = override_cred->uid;
+		override_cred->fsgid = override_cred->gid;
 
-	if (!issecure(SECURE_NO_SETUID_FIXUP)) {
-		/* Clear the capabilities if we switch to a non-root user */
-		kuid_t root_uid = make_kuid(override_cred->user_ns, 0);
-		if (!uid_eq(override_cred->uid, root_uid))
-			cap_clear(override_cred->cap_effective);
-		else
-			override_cred->cap_effective =
-				override_cred->cap_permitted;
+		if (!issecure(SECURE_NO_SETUID_FIXUP)) {
+			/* Clear the capabilities if we switch to a non-root user */
+			kuid_t root_uid = make_kuid(override_cred->user_ns, 0);
+			if (!uid_eq(override_cred->uid, root_uid))
+				cap_clear(override_cred->cap_effective);
+			else
+				override_cred->cap_effective =
+					override_cred->cap_permitted;
+		}
 	}
 
 	/*
@@ -463,6 +474,20 @@ out:
 	revert_creds(old_cred);
 	put_cred(override_cred);
 	return res;
+}
+
+SYSCALL_DEFINE3(faccessat, int, dfd, const char __user *, filename, int, mode)
+{
+	return do_faccessat(dfd, filename, mode, 0);
+}
+
+SYSCALL_DEFINE4(faccessat2, int, dfd, const char __user *, filename, int, mode,
+		int, flags)
+{
+	if (flags & ~(AT_EACCESS | AT_SYMLINK_NOFOLLOW | AT_EMPTY_PATH))
+		return -EINVAL;
+
+	return do_faccessat(dfd, filename, mode, flags);
 }
 
 SYSCALL_DEFINE2(access, const char __user *, filename, int, mode)

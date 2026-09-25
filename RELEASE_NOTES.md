@@ -35,6 +35,7 @@ Linux 4.14.357-openela · built with Clang/LLVM 18 · A-only flash
 
 ### Containers & Android 17 readiness
 - **Droidspaces-ready** (LXC-like containers): PID/IPC/USER namespaces, SYSVIPC, POSIX mqueue, devtmpfs, full cgroup set (device/pids/net_prio), nftables + NAT/bridge netfilter enabled per the official Droidspaces non-GKI fragment; cgroup v1 prefix compatibility patch applied
+- **Modern syscall compat pack**: faccessat2 + pidfd_getfd backported (joining the vendor-provided close_range, epoll_pwait2, pidfd_open, pidfd_send_signal) — the syscalls modern systemd/container userspace and Android 17-era userspace expect; openat2/clone3/rseq/io_uring deferred as too invasive for 4.14
 - **Android 17 ready**: Android 17's bionic syscall surface is identical to Android 16's (274 syscalls, zero added); config audited against AOSP core kernel requirements — no new kernel features required
 
 ## Assets

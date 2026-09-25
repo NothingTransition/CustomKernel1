@@ -28,6 +28,9 @@
 
 #include <linux/mm.h>
 #include <linux/export.h>
+#include <linux/fdtable.h>
+#include <linux/file.h>
+#include <linux/ptrace.h>
 #include <linux/slab.h>
 #include <linux/init.h>
 #include <linux/rculist.h>
@@ -483,7 +486,59 @@ static int pidfd_create(struct pid *pid)
  * Return: On success, a cloexec pidfd is returned.
  *         On error, a negative errno number will be returned.
  */
-SYSCALL_DEFINE2(pidfd_open, pid_t, pid, unsigned int, flags)
+SYSCALL_DEFINE3(pidfd_getfd, int, pidfd, int, fd, unsigned int, flags)
+{
+	struct pid *pid;
+	struct file *file, *f;
+	struct files_struct *files;
+	struct task_struct *task;
+	int newfd;
+
+	if (flags)
+		return -EINVAL;
+
+	f = fget_raw(pidfd);
+	if (!f)
+		return -EBADF;
+	if (f->f_op != &pidfd_fops) {
+		fput(f);
+		return -EBADF;
+	}
+	pid = f->private_data;
+
+	task = get_pid_task(pid, PIDTYPE_PID);
+	fput(f);
+	if (!task)
+		return -ESRCH;
+
+	if (!ptrace_may_access(task, PTRACE_MODE_ATTACH_REALCREDS)) {
+		put_task_struct(task);
+		return -EPERM;
+	}
+
+	files = get_files_struct(task);
+	put_task_struct(task);
+	if (!files)
+		return -ENOENT;
+
+	spin_lock(&files->file_lock);
+	file = fcheck_files(files, fd);
+	if (file)
+		get_file(file);
+	spin_unlock(&files->file_lock);
+	put_files_struct(files);
+
+	if (!file)
+		return -EBADF;
+
+	newfd = get_unused_fd_flags(O_CLOEXEC);
+	if (newfd < 0)
+		fput(file);
+	else
+		fd_install(newfd, file);
+
+	return newfd;
+}
 {
 	int fd, ret;
 	struct pid *p;
