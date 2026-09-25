@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Package the AnyKernel3 flashable zips (classic + experimental variants).
+# Package the AnyKernel3 flashable zip (full-stack: kernel + DTB + DTBO,
+# whole miatoll family).
 # Run from the kernel source root after a successful build (out/ populated).
 set -euxo pipefail
 
