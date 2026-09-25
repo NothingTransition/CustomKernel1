@@ -25,6 +25,7 @@ Linux 4.14.357-openela · built with Clang/LLVM 18 · A-only flash
 ### Storage / IO
 - **BFQ** I/O scheduler — compiled in and set as the system default (replaces CFQ; noop/deadline/mq-deadline/kyber still selectable per-disk)
 - BFQ cgroup (per-app) scheduling support
+- **BLK_WBT** block writeback throttling (sq + mq) — smooths background writes so foreground operations stay responsive
 
 ### Networking
 - **TCP BBR** congestion control — compiled in and set as the system default
