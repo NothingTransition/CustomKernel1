@@ -37,6 +37,17 @@
 
 #include "internal.h"
 
+/*
+ * AT_EACCESS may be absent from this tree's UAPI headers (Android trees
+ * commonly drop it because no in-kernel user existed before faccessat2).
+ * Its ABI value is 0x200; it aliases AT_REMOVEDIR, but the two are never
+ * valid in the same syscall, so defining it here matches upstream and is
+ * safe.
+ */
+#ifndef AT_EACCESS
+#define AT_EACCESS 0x200
+#endif
+
 int do_truncate2(struct vfsmount *mnt, struct dentry *dentry, loff_t length,
 		unsigned int time_attrs, struct file *filp)
 {

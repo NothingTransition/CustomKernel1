@@ -471,20 +471,18 @@ static int pidfd_create(struct pid *pid)
 }
 
 /**
- * pidfd_open() - Open new pid file descriptor.
+ * pidfd_getfd() - Obtain a duplicate of another process's file descriptor.
  *
- * @pid:   pid for which to retrieve a pidfd
- * @flags: flags to pass
+ * @pidfd:    pid file descriptor of the target process
+ * @fd:       file descriptor in the target process to duplicate
+ * @flags:    reserved for future extensions, must be 0
  *
- * This creates a new pid file descriptor with the O_CLOEXEC flag set for
- * the process identified by @pid. Currently, the process identified by
- * @pid must be a thread-group leader. This restriction currently exists
- * for all aspects of pidfds including pidfd creation (CLONE_PIDFD cannot
- * be used with CLONE_THREAD) and pidfd polling (only supports thread group
- * leaders).
+ * Duplicates @fd from the process identified by @pidfd into the calling
+ * process. Access is gated on PTRACE_MODE_ATTACH_REALCREDS permissions,
+ * mirroring upstream semantics. The returned descriptor has O_CLOEXEC set.
  *
- * Return: On success, a cloexec pidfd is returned.
- *         On error, a negative errno number will be returned.
+ * Return: On success, the new file descriptor is returned. On error, a
+ * negative errno number is returned.
  */
 SYSCALL_DEFINE3(pidfd_getfd, int, pidfd, int, fd, unsigned int, flags)
 {
@@ -539,6 +537,24 @@ SYSCALL_DEFINE3(pidfd_getfd, int, pidfd, int, fd, unsigned int, flags)
 
 	return newfd;
 }
+
+/**
+ * pidfd_open() - Open new pid file descriptor.
+ *
+ * @pid:   pid for which to retrieve a pidfd
+ * @flags: flags to pass
+ *
+ * This creates a new pid file descriptor with the O_CLOEXEC flag set for
+ * the process identified by @pid. Currently, the process identified by
+ * @pid must be a thread-group leader. This restriction currently exists
+ * for all aspects of pidfds including pidfd creation (CLONE_PIDFD cannot
+ * be used with CLONE_THREAD) and pidfd polling (only supports thread group
+ * leaders).
+ *
+ * Return: On success, a cloexec pidfd is returned.
+ *         On error, a negative errno number will be returned.
+ */
+SYSCALL_DEFINE3(pidfd_open, int, pid, unsigned int, flags)
 {
 	int fd, ret;
 	struct pid *p;
