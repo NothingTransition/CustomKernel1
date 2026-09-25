@@ -145,8 +145,7 @@ jobs:
 
           if [ "$build_status" -ne 0 ]; then
             echo 'Kernel build failed. Relevant diagnostics:'
-            awk '/error:/ { c=5 } c>0 { print; c-- } /undefined reference|No rule to make target|Error [0-9]+/ { print }' build.log \
-              | head -n 120 \
+            awk 'BEGIN{f=0; n=0} /error:/ { f=1 } f { print; n++ } n>=45 { exit }' build.log \
               | sed 's/%/%25/g; s/\r/%0D/g; s/\n/%0A/g; s/^/::error::/' || true
             tail -n 300 build.log
             exit "$build_status"
