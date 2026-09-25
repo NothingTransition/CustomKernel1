@@ -22,8 +22,14 @@ Linux 4.14.357-openela · built with Clang/LLVM 18 · A-only flash
 - **NoMount v2.0.0** — per-app directory hiding via keyring rules
 - **BRENE v0.0.68** module bundled — SUSFS rules control panel
 
+### Storage / IO
+- **BFQ** I/O scheduler — compiled in and set as the system default (replaces CFQ; noop/deadline/mq-deadline/kyber still selectable per-disk)
+- BFQ cgroup (per-app) scheduling support
+
 ### Networking
-- **TCP BBR** congestion control — compiled in and set as the system default (CUBIC still available)
+- **TCP BBR** congestion control — compiled in and set as the system default
+- Additional TCP congestion controls built in: **Vegas, Westwood+, BIC, HTCP** (plus CUBIC) — switchable per-route/app
+- **FQ_CODEL** and **FQ** packet schedulers — bufferbloat control for steadier latency under load
 - BPF / eBPF support (syscall + JIT)
 
 ### Filesystems & compatibility
