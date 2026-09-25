@@ -46,9 +46,13 @@ PATCH_VBMETA_FLAG=auto;
 # boot install
 dump_boot;
 
-# Multi-ROM DTB handling: keep the installed ROM's own DTB so this kernel
-# boots Android 13/14/15/16 ROMs alike. dtb.fallback is a last resort only.
-if [ -s "$SPLITIMG/dtb" ]; then
+# Multi-ROM DTB handling:
+# 1. Classic zip bundles our own dtb/dtbo -> use ours (full-stack variant).
+# 2. Experimental zip ships kernel-only -> keep the installed ROM's own DTB
+#    (Android 13/14/15/16). dtb.fallback is a last resort only.
+if [ -s "$AKHOME/dtb" ] || [ -s "$AKHOME/dtb.img" ]; then
+  ui_print "- Using bundled Stormbreaker DTB/DTBO (classic full-stack)";
+elif [ -s "$SPLITIMG/dtb" ]; then
   ui_print "- Keeping this ROM's own DTB (multi-ROM compatible)";
 elif [ -s "$SPLITIMG/kernel_dtb" ]; then
   ui_print "- Keeping this ROM's own DTB (appended to kernel)";

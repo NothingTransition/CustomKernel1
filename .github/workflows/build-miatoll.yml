@@ -226,13 +226,15 @@ jobs:
             --exclude='placeholder' \
             AnyKernel3/ package/
 
-          # Zip-root images consumed by AnyKernel3:
-          #  - Image.gz    : kernel only; anykernel.sh keeps the ROM's own DTB at
-          #                  flash time, so the zip boots Android 13/14/15/16 ROMs.
-          #  - dtb.fallback: used ONLY if the ROM's boot image carries no DTB.
-          # dtbo.img is deliberately NOT packaged: each ROM keeps its own overlays.
+          # Two zip variants from the same AnyKernel3 base (anykernel.sh
+          # decides at flash time which DTB path applies):
+          #  - classic     : Image.gz + our dtb + our dtbo (full-stack, like
+          #                  traditional custom kernels)
+          #  - experimental: Image.gz only; preserves the installed ROM's own
+          #                  DTB/DTBO (multi-ROM: Android 13/14/15/16)
           cp out/arch/arm64/boot/Image.gz package/Image.gz
-          cp out/arch/arm64/boot/dtb.img package/dtb.fallback
+          cp out/arch/arm64/boot/dtb.img package/dtb
+          cp out/arch/arm64/boot/dtbo.img package/dtbo.img
 
           # No modules packaged: KSU/SUSFS/NoMount are fully built-in and the
           # few defconfig =m leftovers (usb gspca, rmnet helpers) are not
@@ -245,6 +247,15 @@ jobs:
             cd package
             zip -r9 \
               "../artifacts/Stormbreaker-miatoll-KSU-SUSFS-NoMount-${GITHUB_RUN_NUMBER}.zip" .
+          )
+
+          # experimental variant: drop our dtb/dtbo, keep dtb as last-resort fallback
+          rm -f package/dtb package/dtbo.img
+          cp out/arch/arm64/boot/dtb.img package/dtb.fallback
+          (
+            cd package
+            zip -r9 \
+              "../artifacts/Stormbreaker-miatoll-KSU-SUSFS-NoMount-${GITHUB_RUN_NUMBER}-experimental.zip" .
           )
 
           # Raw images + metadata alongside the flashable zip
