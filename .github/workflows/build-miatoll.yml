@@ -218,51 +218,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf package artifacts
-          mkdir -p artifacts
-          rsync -a \
-            --exclude='.gitignore' \
-            --exclude='README.md' \
-            --exclude='placeholder' \
-            AnyKernel3/ package/
+          bash scripts/package-anykernel3.sh 2>&1 | tee package.log
 
-          # Two zip variants from the same AnyKernel3 base (anykernel.sh
-          # decides at flash time which DTB path applies):
-          #  - classic     : Image.gz + our dtb + our dtbo (full-stack, like
-          #                  traditional custom kernels)
-          #  - experimental: Image.gz only; preserves the installed ROM's own
-          #                  DTB/DTBO (multi-ROM: Android 13/14/15/16)
-          cp out/arch/arm64/boot/Image.gz package/Image.gz
-          cp out/arch/arm64/boot/dtb.img package/dtb
-          cp out/arch/arm64/boot/dtbo.img package/dtbo.img
-
-          # No modules packaged: KSU/SUSFS/NoMount are fully built-in and the
-          # few defconfig =m leftovers (usb gspca, rmnet helpers) are not
-          # needed in the flashable zip. modules/ stays empty, do.modules=0.
-
-          # keep ramdisk/ and patch/ dirs in the zip (empty is fine)
-          mkdir -p package/ramdisk package/patch
-
-          (
-            cd package
-            zip -r9 \
-              "../artifacts/Stormbreaker-miatoll-KSU-SUSFS-NoMount-${GITHUB_RUN_NUMBER}.zip" .
-          )
-
-          # experimental variant: drop our dtb/dtbo, keep dtb as last-resort fallback
-          rm -f package/dtb package/dtbo.img
-          cp out/arch/arm64/boot/dtb.img package/dtb.fallback
-          (
-            cd package
-            zip -r9 \
-              "../artifacts/Stormbreaker-miatoll-KSU-SUSFS-NoMount-${GITHUB_RUN_NUMBER}-experimental.zip" .
-          )
-
-          # Raw images + metadata alongside the flashable zip
-          cp kernel.release SHA256SUMS build-info.txt toolchain-info.txt artifacts/
-          cp out/arch/arm64/boot/{Image.gz,dtb.img,dtbo.img} artifacts/
-          sha256sum artifacts/Stormbreaker-miatoll-*.zip >> artifacts/SHA256SUMS
-          unzip -l artifacts/Stormbreaker-miatoll-*.zip
+      - name: Report packaging failure
+        if: failure()
+        shell: bash
+        run: |
+          tail -n 60 package.log 2>/dev/null \
+            | sed 's/%/%25/g; s/\r/%0D/g; s/^/::error::pkg::/' || true
 
       - name: Upload kernel artifacts
         uses: actions/upload-artifact@v4
