@@ -145,8 +145,8 @@ jobs:
 
           if [ "$build_status" -ne 0 ]; then
             echo 'Kernel build failed. Relevant diagnostics:'
-            grep -Ei 'error:|undefined reference|No rule to make target|Error [0-9]+' build.log \
-              | tail -n 30 \
+            awk '/error:/ { c=5 } c>0 { print; c-- } /undefined reference|No rule to make target|Error [0-9]+/ { print }' build.log \
+              | head -n 120 \
               | sed 's/%/%25/g; s/\r/%0D/g; s/\n/%0A/g; s/^/::error::/' || true
             tail -n 300 build.log
             exit "$build_status"
