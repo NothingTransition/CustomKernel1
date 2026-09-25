@@ -1,16 +1,16 @@
 ### AnyKernel3 Ramdisk Mod Script
 ## osm0sis @ xda-developers
-## Stormbreaker — curtana (Redmi Note 9 Pro / 9S), A-only, boot header v2
-## Multi-ROM: keeps the installed ROM's own DTB/DTBO (Android 13/14/15/16)
+## Stormbreaker — miatoll family (curtana/excalibur/gram/joyeuse), A-only, boot header v2
+## Full-stack flash: kernel + Stormbreaker's own DTB + DTBO (per-device overlays)
 
 ### AnyKernel setup
 # global properties
 properties() { '
-kernel.string=Stormbreaker KernelSU Universal (KSU + SUSFS v2.3.0 + NoMount v2.0.0)
+kernel.string=Stormbreaker KernelSU (KSU + SUSFS v2.3.0 + NoMount v2.0.0)
 kernel.compiler=Clang/LLVM 18 (LLVM=1, no GCC)
 kernel.made=NothingTransition CI
 kernel.version=4.14.357-openela
-message.word=Stormbreaker stable for curtana — universal: boots Android 13/14/15/16 ROMs (keeps your ROM's own DTB/DTBO).
+message.word=Stormbreaker stable for the miatoll family (curtana / excalibur / gram / joyeuse) — full-stack DTB/DTBO included.
 do.devicecheck=1
 do.modules=0
 do.systemless=1
@@ -46,26 +46,10 @@ PATCH_VBMETA_FLAG=auto;
 # boot install
 dump_boot;
 
-# Multi-ROM DTB handling:
-# 1. Classic zip bundles our own dtb/dtbo -> use ours (full-stack variant).
-# 2. Experimental zip ships kernel-only -> keep the installed ROM's own DTB
-#    (Android 13/14/15/16). dtb.fallback is a last resort only.
-if [ -s "$AKHOME/dtb" ] || [ -s "$AKHOME/dtb.img" ]; then
-  ui_print "- Using bundled Stormbreaker DTB/DTBO (classic full-stack)";
-elif [ -s "$SPLITIMG/dtb" ]; then
-  ui_print "- Keeping this ROM's own DTB (multi-ROM compatible)";
-elif [ -s "$SPLITIMG/kernel_dtb" ]; then
-  ui_print "- Keeping this ROM's own DTB (appended to kernel)";
-  cat "$AKHOME/Image.gz" "$SPLITIMG/kernel_dtb" > "$AKHOME/Image.gz-dtb";
-  rm -f "$AKHOME/Image.gz";
-else
-  if [ -s "$AKHOME/dtb.fallback" ]; then
-    ui_print "- No ROM DTB detected; using bundled fallback DTB";
-    cp -f "$AKHOME/dtb.fallback" "$SPLITIMG/dtb";
-  else
-    abort "No DTB found to build boot image. Aborting...";
-  fi;
-fi;
+# Full-stack flash: the zip bundles Stormbreaker's own dtb and dtbo.img.
+# ak3-core picks $AKHOME/dtb (our dtb) over the ROM's, and flash_generic
+# writes dtbo.img to the dtbo partition. dtb = shared miatoll base,
+# dtbo = per-device overlays for curtana/excalibur/gram/joyeuse.
 
 write_boot;
 ## end boot install

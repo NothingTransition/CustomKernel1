@@ -11,12 +11,10 @@ rsync -a \
   --exclude='placeholder' \
   AnyKernel3/ package/
 
-# Two zip variants from the same AnyKernel3 base (anykernel.sh decides at
-# flash time which DTB path applies):
-#  - classic     : Image.gz + our dtb + our dtbo (full-stack, like
-#                  traditional custom kernels)
-#  - experimental: Image.gz only; preserves the installed ROM's own DTB/DTBO
-#                  (multi-ROM: Android 13/14/15/16)
+# Full-stack zip: Image.gz + Stormbreaker's own dtb + dtbo. The dtb is the
+# shared miatoll base (cust-atoll-ab) and dtbo.img carries the per-device
+# overlays for all four variants (curtana/excalibur/gram/joyeuse), so one zip
+# covers the whole miatoll family.
 cp out/arch/arm64/boot/Image.gz package/Image.gz
 cp out/arch/arm64/boot/dtb.img package/dtb
 cp out/arch/arm64/boot/dtbo.img package/dtbo.img
@@ -30,15 +28,6 @@ mkdir -p package/ramdisk package/patch
   cd package
   zip -r9 \
     "../artifacts/Stormbreaker-miatoll-KSU-SUSFS-NoMount-${GITHUB_RUN_NUMBER}.zip" .
-)
-
-# experimental variant: drop our dtb/dtbo, keep dtb as last-resort fallback
-rm -f package/dtb package/dtbo.img
-cp out/arch/arm64/boot/dtb.img package/dtb.fallback
-(
-  cd package
-  zip -r9 \
-    "../artifacts/Stormbreaker-miatoll-KSU-SUSFS-NoMount-${GITHUB_RUN_NUMBER}-experimental.zip" .
 )
 
 # Raw images + metadata alongside the flashable zips

@@ -300,7 +300,7 @@ jobs:
           fi
           gh release create "$TAG" \
             --target "$GITHUB_SHA" \
-            --title "Stormbreaker — KernelSU v3.3.0-51 + SUSFS v2.3.0 + NoMount + BBR (curtana · Android 13/14/15/16)" \
+            --title "Stormbreaker — KernelSU v3.3.0-51 + SUSFS v2.3.0 + NoMount + BBR (miatoll family)" \
             --notes-file release-notes.md \
             release-assets/Stormbreaker-miatoll-*.zip \
             release-assets/KernelSU-manager.apk \
