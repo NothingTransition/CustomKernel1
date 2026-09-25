@@ -32,6 +32,7 @@ Linux 4.14.357-openela · built with Clang/LLVM 18 · A-only flash
 - F2FS with compression (LZO / LZ4 / ZSTD) + encryption + security labels
 - Loadable module support with SHA512 signature verification (unsigned modules load with taint)
 - **Universal multi-ROM flashing (Android 13/14/15/16)**: the zip ships the kernel binary only and preserves your ROM's own DTB and DTBO at flash time — works on crDroid, LineageOS, Infinity X and other curtana ROMs, A13 through A16 (bundled DTB is used only as a last-resort fallback)
+- **Official osm0sis AnyKernel3 template**: flasher structure, `anykernel.sh` and all tools updated to the current upstream osm0sis/AnyKernel3 master layout
 
 ### Containers & Android 17 readiness
 - **Droidspaces-ready** (LXC-like containers): PID/IPC/USER namespaces, SYSVIPC, POSIX mqueue, devtmpfs, full cgroup set (device/pids/net_prio), nftables + NAT/bridge netfilter enabled per the official Droidspaces non-GKI fragment; cgroup v1 prefix compatibility patch applied

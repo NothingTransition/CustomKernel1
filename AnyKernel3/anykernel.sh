@@ -1,10 +1,10 @@
-# AnyKernel3 Ramdisk Mod Script
-# osm0sis @ xda-developers
-# Configured for Xiaomi miatoll family (curtana/excalibur/gram/joyeuse),
-# A-only partitioning, boot header v2 (dtb inside boot image, LZ4 ramdisk)
+### AnyKernel3 Ramdisk Mod Script
+## osm0sis @ xda-developers
+## Stormbreaker — curtana (Redmi Note 9 Pro / 9S), A-only, boot header v2
+## Multi-ROM: keeps the installed ROM's own DTB/DTBO (Android 13/14/15/16)
 
-## AnyKernel setup
-# begin properties
+### AnyKernel setup
+# global properties
 properties() { '
 kernel.string=Stormbreaker KernelSU Universal (KSU + SUSFS v2.3.0 + NoMount v2.0.0)
 kernel.compiler=Clang/LLVM 18 (LLVM=1, no GCC)
@@ -23,41 +23,41 @@ device.name4=joyeuse
 device.name5=miatoll
 supported.versions=
 supported.patchlevels=
+supported.vendorpatchlevels=
 '; } # end properties
 
-# shell variables
-block=/dev/block/bootdevice/by-name/boot;
-is_slot_device=0;
-ramdisk_compression=auto;
-patch_vbmeta_flag=auto;
 
+### AnyKernel install
+## boot files attributes
+boot_attributes() {
+set_perm_recursive 0 0 755 644 $RAMDISK/*;
+set_perm_recursive 0 0 750 750 $RAMDISK/init* $RAMDISK/sbin;
+} # end attributes
 
-## AnyKernel methods (DO NOT CHANGE)
-# import patching functions/variables - see for reference
+# boot shell variables
+BLOCK=/dev/block/bootdevice/by-name/boot;
+IS_SLOT_DEVICE=0;
+RAMDISK_COMPRESSION=auto;
+PATCH_VBMETA_FLAG=auto;
+
+# import functions/variables and setup patching - see for reference (DO NOT REMOVE)
 . tools/ak3-core.sh;
 
-
-## AnyKernel file attributes
-# set permissions/ownership for included ramdisk files
-set_perm_recursive 0 0 755 644 $ramdisk/*;
-set_perm_recursive 0 0 750 750 $ramdisk/init* $ramdisk/sbin;
-
-## AnyKernel boot install
+# boot install
 dump_boot;
 
-## Multi-ROM DTB handling (Android 13/14/15/16 support):
-## keep the ROM's own DTB so the kernel boots any curtana ROM.
-## dtb.fallback (bundled) is only used when the ROM provides none.
-if [ -s "$split_img/dtb" ]; then
+# Multi-ROM DTB handling: keep the installed ROM's own DTB so this kernel
+# boots Android 13/14/15/16 ROMs alike. dtb.fallback is a last resort only.
+if [ -s "$SPLITIMG/dtb" ]; then
   ui_print "- Keeping this ROM's own DTB (multi-ROM compatible)";
-elif [ -s "$split_img/kernel_dtb" ]; then
+elif [ -s "$SPLITIMG/kernel_dtb" ]; then
   ui_print "- Keeping this ROM's own DTB (appended to kernel)";
-  cat "$home/Image.gz" "$split_img/kernel_dtb" > "$home/Image.gz-dtb";
-  rm -f "$home/Image.gz";
+  cat "$AKHOME/Image.gz" "$SPLITIMG/kernel_dtb" > "$AKHOME/Image.gz-dtb";
+  rm -f "$AKHOME/Image.gz";
 else
-  if [ -s "$home/dtb.fallback" ]; then
+  if [ -s "$AKHOME/dtb.fallback" ]; then
     ui_print "- No ROM DTB detected; using bundled fallback DTB";
-    cp -f "$home/dtb.fallback" "$split_img/dtb";
+    cp -f "$AKHOME/dtb.fallback" "$SPLITIMG/dtb";
   else
     abort "No DTB found to build boot image. Aborting...";
   fi;
