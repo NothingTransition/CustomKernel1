@@ -6,11 +6,11 @@
 ## AnyKernel setup
 # begin properties
 properties() { '
-kernel.string=Stormbreaker KernelSU (SUSFS v2.3.0 + NoMount v2.0.0)
+kernel.string=Stormbreaker KernelSU Universal (KSU + SUSFS v2.3.0 + NoMount v2.0.0)
 kernel.compiler=Clang/LLVM 18 (LLVM=1, no GCC)
 kernel.made=NothingTransition CI
 kernel.version=4.14.357-openela
-message.word=Stormbreaker stable release for curtana / AOSP Infinity X (A-only, boot header v2).
+message.word=Stormbreaker stable for curtana — universal: boots Android 13/14/15/16 ROMs (keeps your ROM's own DTB/DTBO).
 do.devicecheck=1
 do.modules=0
 do.systemless=1
@@ -44,5 +44,24 @@ set_perm_recursive 0 0 750 750 $ramdisk/init* $ramdisk/sbin;
 
 ## AnyKernel boot install
 dump_boot;
+
+## Multi-ROM DTB handling (Android 13/14/15/16 support):
+## keep the ROM's own DTB so the kernel boots any curtana ROM.
+## dtb.fallback (bundled) is only used when the ROM provides none.
+if [ -s "$split_img/dtb" ]; then
+  ui_print "- Keeping this ROM's own DTB (multi-ROM compatible)";
+elif [ -s "$split_img/kernel_dtb" ]; then
+  ui_print "- Keeping this ROM's own DTB (appended to kernel)";
+  cat "$home/Image.gz" "$split_img/kernel_dtb" > "$home/Image.gz-dtb";
+  rm -f "$home/Image.gz";
+else
+  if [ -s "$home/dtb.fallback" ]; then
+    ui_print "- No ROM DTB detected; using bundled fallback DTB";
+    cp -f "$home/dtb.fallback" "$split_img/dtb";
+  else
+    abort "No DTB found to build boot image. Aborting...";
+  fi;
+fi;
+
 write_boot;
 ## end boot install

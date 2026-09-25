@@ -1,4 +1,4 @@
-# Stormbreaker — curtana (Redmi Note 9 Pro / 9S) · AOSP Android 16 (Infinity X)
+# Stormbreaker — curtana (Redmi Note 9 Pro / 9S) · Android 13/14/15/16 (any ROM)
 
 Linux 4.14.357-openela · built with Clang/LLVM 18 · A-only flash
 
@@ -31,7 +31,7 @@ Linux 4.14.357-openela · built with Clang/LLVM 18 · A-only flash
 - NTFS support
 - F2FS with compression (LZO / LZ4 / ZSTD) + encryption + security labels
 - Loadable module support with SHA512 signature verification (unsigned modules load with taint)
-- Ships kernel + dtb + dtbo; preserves your ROM's ramdisk and existing root setup
+- **Universal multi-ROM flashing (Android 13/14/15/16)**: the zip ships the kernel binary only and preserves your ROM's own DTB and DTBO at flash time — works on crDroid, LineageOS, Infinity X and other curtana ROMs, A13 through A16 (bundled DTB is used only as a last-resort fallback)
 
 ### Containers & Android 17 readiness
 - **Droidspaces-ready** (LXC-like containers): PID/IPC/USER namespaces, SYSVIPC, POSIX mqueue, devtmpfs, full cgroup set (device/pids/net_prio), nftables + NAT/bridge netfilter enabled per the official Droidspaces non-GKI fragment; cgroup v1 prefix compatibility patch applied
@@ -41,14 +41,15 @@ Linux 4.14.357-openela · built with Clang/LLVM 18 · A-only flash
 
 | File | What it is |
 |---|---|
-| `Stormbreaker-miatoll-*.zip` | Flashable AnyKernel3 zip (kernel + dtb + dtbo) |
+| `Stormbreaker-miatoll-*.zip` | Flashable AnyKernel3 zip (kernel only — keeps your ROM's own DTB/DTBO) |
 | `KernelSU-manager.apk` | KernelSU manager app v3.3.0-51 — install **after** flashing + booting |
 | `BRENE-v0.0.68.zip` | SUSFS rules module — install inside the KSU manager, then reboot |
 | `NoMount-v2.0.0.zip` | NoMount module — install inside the KSU manager, then reboot |
 
 ## Install
 
-1. Flash the zip.
-2. Boot the ROM.
-3. Install `KernelSU-manager.apk`.
-4. In the manager: install the BRENE and NoMount modules, then reboot.
+1. Boot your ROM normally first (any curtana ROM: Android 13/14/15/16).
+2. From recovery (TWRP/OrangeFox), flash the zip — it keeps your ROM's own DTB/DTBO.
+3. Boot the ROM.
+4. Install `KernelSU-manager.apk`.
+5. In the manager: install the BRENE and NoMount modules, then reboot.

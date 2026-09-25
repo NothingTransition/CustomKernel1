@@ -227,12 +227,12 @@ jobs:
             AnyKernel3/ package/
 
           # Zip-root images consumed by AnyKernel3:
-          #  - Image.gz : kernel (magiskboot repack keeps the ROM's ramdisk)
-          #  - dtb      : written into the boot image dtb area (boot header v3)
-          #  - dtbo.img : flashed to the dtbo partition by write_boot
+          #  - Image.gz    : kernel only; anykernel.sh keeps the ROM's own DTB at
+          #                  flash time, so the zip boots Android 13/14/15/16 ROMs.
+          #  - dtb.fallback: used ONLY if the ROM's boot image carries no DTB.
+          # dtbo.img is deliberately NOT packaged: each ROM keeps its own overlays.
           cp out/arch/arm64/boot/Image.gz package/Image.gz
-          cp out/arch/arm64/boot/dtb.img package/dtb
-          cp out/arch/arm64/boot/dtbo.img package/dtbo.img
+          cp out/arch/arm64/boot/dtb.img package/dtb.fallback
 
           # No modules packaged: KSU/SUSFS/NoMount are fully built-in and the
           # few defconfig =m leftovers (usb gspca, rmnet helpers) are not
@@ -326,7 +326,7 @@ jobs:
           fi
           gh release create "$TAG" \
             --target "$GITHUB_SHA" \
-            --title "Stormbreaker — KernelSU v3.3.0-51 + SUSFS v2.3.0 + NoMount + BBR (curtana / Infinity X)" \
+            --title "Stormbreaker — KernelSU v3.3.0-51 + SUSFS v2.3.0 + NoMount + BBR (curtana · Android 13/14/15/16)" \
             --notes-file release-notes.md \
             release-assets/Stormbreaker-miatoll-*.zip \
             release-assets/KernelSU-manager.apk \
