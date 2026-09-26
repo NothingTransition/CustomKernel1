@@ -3,8 +3,8 @@
 This directory vendors the kernel component from:
 
 - Repository: https://github.com/backslashxx/KernelSU
-- Tag: `v3.3.0-51` (upstream kernel Makefile: 32651)
-- Commit: `d7e36bd05323224c88f105836ae6478b7ee07db9`
+- Tag: `v3.3.0-52` (upstream kernel Makefile: 32651)
+- Commit: `072d66af10bd14444a7aad6e9f3020dc19baaa7c` (master at the -52 release window; -52 ships no git tag)
 - Note: at this tag upstream's manager APK reports 32653 while the kernel
   tree reports 32651 (upstream's own skew); we mirror the kernel value
   (32651) verbatim. A same-day 32653 alignment experiment was reverted on
@@ -12,6 +12,18 @@ This directory vendors the kernel component from:
 
 ## Sync history
 
+- 2026-09-26: manual sync `v3.3.0-51` -> `v3.3.0-52` (release -51 was deleted
+  upstream, so the old manager pin no longer resolves). Taken upstream:
+  `include/util.h` (drops the <5.9 ksu_sys_umount inline — its live <5.9 user
+  moved), `kernel_compat.h` (legacy kernel_read compat reorg, adds
+  ksu_sign_extend64, keeps the lookup_user_key() session-keyring grab used on
+  4.14), `feature/kernel_umount.c` (new <5.9 fallback: weak path_umount probe
+  with set_fs/KERNEL_DS umount-syscall fallback — correct for 4.14),
+  `INTERNAL.md`. Kept local: the SUSFS-carrying files (Kconfig menu, ksu.c
+  susfs_init, setuid_hook.c susfs umount/looped-path work, supercall ABI,
+  selinux glue, dispatch.c one-shots) — upstream -52 dropped SUSFS entirely,
+  so nothing SUSFS-related was taken. KSU_VERSION stays 32651 (unchanged
+  upstream too); manager pin and docs moved to v3.3.0-52 (APK still 32653).
 - 2026-09-24: KSU_VERSION reverted to 32651 (upstream kernel value) after a
   same-day 32653 alignment experiment — maintainer decision to mirror
   upstream verbatim again. Release flipped from pre-release to stable and
