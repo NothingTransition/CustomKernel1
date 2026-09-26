@@ -623,7 +623,7 @@ static int s_show(struct seq_file *m, void *p)
 			   iter->type, iter->name);
 #else
 	{
-		if (strstr(iter->name, "ksu_") || !strncmp(iter->name, "susfs_", 6) || !strncmp(iter->name, "ksud", 4)) {
+		if (!strncmp(iter->name, "ksu_", 4) || !strncmp(iter->name, "susfs_", 6) || !strncmp(iter->name, "ksud", 4)) {
 			return 0;
 		}
 		seq_printf(m, "%pK %c %s\n", (void *)iter->value,

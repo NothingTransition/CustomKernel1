@@ -117,17 +117,19 @@ static noinline void ksu_add_shit_to_list(u32 cmd, const char *args[])
 			goto skip_type_dup_check;
 
 		// anti duplicate
+		size_t nlen = strlen(name);
 		size_t offset = 0;
 		while (ksu_hide_type_list->len > offset) {
 			const char *current_type = ksu_hide_type_list->data + offset;
+			size_t cur_len = strlen(current_type);
 
-			char tmp_buf[64];
-			snprintf(tmp_buf, sizeof(tmp_buf), ":%s:", name);
-
-			if (!strcmp(current_type, tmp_buf))
+			/* exact ":name:" match; no scratch buffer, no truncation */
+			if (cur_len == nlen + 2 && current_type[0] == ':' &&
+			    current_type[cur_len - 1] == ':' &&
+			    !memcmp(current_type + 1, name, nlen))
 				return;
 
-			offset = offset + strlen(current_type) + 1;
+			offset = offset + cur_len + 1;
 		}
 
 	skip_type_dup_check:;
@@ -165,6 +167,7 @@ static noinline void ksu_add_shit_to_list(u32 cmd, const char *args[])
 			goto skip_rule_dup_check;
 
 		// anti duplicate
+		size_t src_len = strlen(src), tgt_len = strlen(tgt);
 		size_t offset = 0;
 		while (ksu_hide_rule_list->len > offset) {
 			const char *src_chk = ksu_hide_rule_list->data + offset;
@@ -173,11 +176,12 @@ static noinline void ksu_add_shit_to_list(u32 cmd, const char *args[])
 			const char *tgt_chk = src_chk + src_sz;
 			size_t tgt_sz = strlen(tgt_chk) + 1; // for \0
 
-			char src_buf[64], tgt_buf[64];
-			snprintf(src_buf, sizeof(src_buf), ":%s:", src);
-			snprintf(tgt_buf, sizeof(tgt_buf), ":%s:", tgt);
-
-			if (!strcmp(src_chk, src_buf) && !strcmp(tgt_chk, tgt_buf))
+			/* exact ":src:" + ":tgt:" match, truncation-free */
+			if (src_sz == src_len + 3 && tgt_sz == tgt_len + 3 &&
+			    src_chk[0] == ':' && src_chk[src_sz - 2] == ':' &&
+			    tgt_chk[0] == ':' && tgt_chk[tgt_sz - 2] == ':' &&
+			    !memcmp(src_chk + 1, src, src_len) &&
+			    !memcmp(tgt_chk + 1, tgt, tgt_len))
 				return;
 
 			offset = offset + src_sz + tgt_sz;

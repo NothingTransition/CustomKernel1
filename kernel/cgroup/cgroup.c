@@ -3796,7 +3796,16 @@ static int cgroup_add_file(struct cgroup_subsys_state *css, struct cgroup *cgrp,
 	    !(cft->flags & CFTYPE_NO_PREFIX)) {
 		snprintf(name, CGROUP_FILE_NAME_MAX, "%s.%s", cft->ss->name,
 			 cft->name);
-		kernfs_create_link(cgrp->kn, name, kn);
+		{
+			struct kernfs_node *link =
+				kernfs_create_link(cgrp->kn, name, kn);
+
+			/* EEXIST: prefixed original already there; anything
+			 * else is worth a warning but never fails the file */
+			if (IS_ERR(link) && PTR_ERR(link) != -EEXIST)
+				pr_warn("cgroup: noprefix symlink %s failed: %ld\n",
+					name, PTR_ERR(link));
+		}
 	}
 
 	return 0;
