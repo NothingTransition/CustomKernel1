@@ -213,6 +213,9 @@ enum lru_list {
 	NR_LRU_LISTS
 };
 
+/* anon and file, used to size the multigenerational lru arrays */
+#define ANON_AND_FILE 2
+
 #define for_each_lru(lru) for (lru = 0; lru < NR_LRU_LISTS; lru++)
 
 #define for_each_evictable_lru(lru) for (lru = 0; lru <= LRU_ACTIVE_FILE; lru++)
