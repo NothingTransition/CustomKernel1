@@ -27,6 +27,12 @@ Linux 4.14.357-openela · built with Clang/LLVM 18 · A-only flash
 - BFQ cgroup (per-app) scheduling support
 - **BLK_WBT** block writeback throttling (sq + mq) — smooths background writes so foreground operations stay responsive
 
+### Memory
+- **Multigenerational LRU (MGLRU)** — backported from the Android 4.14 FROMLIST/BACKPORT series, enabled by default
+  - Smarter page reclaim under pressure: better working-set tracking, less thrash on 4 GB RAM
+  - Runtime control: `/sys/kernel/mm/lru_gen/enabled` (toggle without reboot)
+  - Tunables: `/sys/kernel/mm/lru_gen`, debugfs stats off (LRU_GEN_STATS unset)
+
 ### Networking
 - **TCP BBR** congestion control — compiled in and set as the system default
 - Additional TCP congestion controls built in: **Vegas, Westwood+, BIC, HTCP** (plus CUBIC) — switchable per-route/app
