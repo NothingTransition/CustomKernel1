@@ -52,6 +52,7 @@
 #include <linux/psi.h>
 #include <linux/memory.h>
 #include <linux/ctype.h>
+#include <linux/debugfs.h>
 #include <linux/shmem_fs.h>
 
 #include <asm/tlbflush.h>
