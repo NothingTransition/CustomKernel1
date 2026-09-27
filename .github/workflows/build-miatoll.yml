@@ -288,19 +288,21 @@ jobs:
           } > release-notes.md
           cat RELEASE_NOTES.md >> release-notes.md
 
-      - name: Create/replace release
+      - name: Create numbered release (history preserved)
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          TAG="stormbreaker-curtana"
+          # One release per build, numbered to match the zip (run number).
+          # Old releases are never deleted — full history stays downloadable.
+          TAG="stormbreaker-v${GITHUB_RUN_NUMBER}"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release delete "$TAG" --yes --cleanup-tag
           fi
           gh release create "$TAG" \
             --target "$GITHUB_SHA" \
-            --title "Stormbreaker — KernelSU v3.3.0-52 + SUSFS v2.3.0 + NoMount + BBR (miatoll family)" \
+            --title "Stormbreaker #${GITHUB_RUN_NUMBER} — KernelSU v3.3.0-52 + SUSFS v2.3.0 + NoMount + BBR (miatoll family)" \
             --notes-file release-notes.md \
             release-assets/Stormbreaker-miatoll-*.zip \
             release-assets/KernelSU-manager.apk \
