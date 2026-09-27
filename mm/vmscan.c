@@ -51,6 +51,7 @@
 #include <linux/dax.h>
 #include <linux/psi.h>
 #include <linux/memory.h>
+#include <linux/ctype.h>
 #include <linux/shmem_fs.h>
 
 #include <asm/tlbflush.h>
@@ -4541,7 +4542,12 @@ static void *lru_gen_seq_next(struct seq_file *m, void *v, loff_t *pos)
 
 	++*pos;
 
+#ifdef CONFIG_NUMA
 	nid = next_memory_node(nid);
+#else
+	/* single-node systems have no next memory node */
+	nid = MAX_NUMNODES;
+#endif
 	if (nid == MAX_NUMNODES) {
 		memcg = mem_cgroup_iter(NULL, memcg, NULL);
 		if (!memcg)
