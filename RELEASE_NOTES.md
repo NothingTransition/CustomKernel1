@@ -51,7 +51,7 @@ Linux 4.14.357-openela · built with Clang/LLVM 18 · A-only flash
 
 ### Containers & Android 17 readiness
 - **Droidspaces-ready** (LXC-like containers): PID/IPC/USER namespaces, SYSVIPC, POSIX mqueue, devtmpfs, full cgroup set (device/pids/net_prio), nftables + NAT/bridge netfilter enabled per the official Droidspaces non-GKI fragment; cgroup v1 prefix compatibility patch applied
-- **Android 17 ready**: Android 17's bionic syscall surface is identical to Android 16's (274 syscalls, zero added); config audited against AOSP core kernel requirements — no new kernel features required
+- **Android 17 boot parity**: defconfig aligned with a known-working Imperial-X A17 build (extracted from its shipped kernel config) — LZ4 ramdisk decompression (RD_LZ4), audit subsystem, full ftrace/tracing core, netfilter LOG/NFLOG/quota2-log targets, HIDRAW (FCM 7), EROFS per-cpu decompression kthreads, larger kernel log buffer. If a specific A17 ROM still misbehaves, report it — the stack has a runtime kill switch and builds are preserved per release for rollback
 
 ## Assets
 
