@@ -4068,7 +4068,7 @@ static bool evict_pages(struct lruvec *lruvec, struct scan_control *sc, int swap
 	spin_unlock_irq(&pgdat->lru_lock);
 
 	mem_cgroup_uncharge_list(&list);
-	free_unref_page_list(&list);
+	free_hot_cold_page_list(&list, true);
 
 	sc->nr_reclaimed += reclaimed;
 done:
@@ -4229,6 +4229,7 @@ DEFINE_STATIC_KEY_TRUE(lru_gen_static_key);
 DEFINE_STATIC_KEY_FALSE(lru_gen_static_key);
 #endif
 
+extern struct mutex cgroup_mutex;
 static DEFINE_MUTEX(lru_gen_state_mutex);
 static int lru_gen_nr_swapfiles __read_mostly;
 
@@ -4341,7 +4342,7 @@ void lru_gen_set_state(bool enable, bool main, bool swap)
 
 	mem_hotplug_begin();
 	mutex_lock(&lru_gen_state_mutex);
-	cgroup_lock();
+	mutex_lock(&cgroup_mutex);
 
 	main = main && enable != lru_gen_enabled();
 	swap = swap && !(enable ? lru_gen_nr_swapfiles++ : --lru_gen_nr_swapfiles);
@@ -4386,7 +4387,7 @@ void lru_gen_set_state(bool enable, bool main, bool swap)
 		cond_resched();
 	} while ((memcg = mem_cgroup_iter(NULL, memcg, NULL)));
 unlock:
-	cgroup_unlock();
+	mutex_unlock(&cgroup_mutex);
 	mutex_unlock(&lru_gen_state_mutex);
 	mem_hotplug_done();
 }
@@ -4402,7 +4403,7 @@ static int __meminit __maybe_unused lru_gen_online_mem(struct notifier_block *se
 		return NOTIFY_DONE;
 
 	mutex_lock(&lru_gen_state_mutex);
-	cgroup_lock();
+	mutex_lock(&cgroup_mutex);
 
 	memcg = mem_cgroup_iter(NULL, NULL, NULL);
 	do {
@@ -4416,7 +4417,7 @@ static int __meminit __maybe_unused lru_gen_online_mem(struct notifier_block *se
 		WRITE_ONCE(lrugen->enabled[1], lru_gen_enabled());
 	} while ((memcg = mem_cgroup_iter(NULL, memcg, NULL)));
 
-	cgroup_unlock();
+	mutex_unlock(&cgroup_mutex);
 	mutex_unlock(&lru_gen_state_mutex);
 
 	return NOTIFY_DONE;
