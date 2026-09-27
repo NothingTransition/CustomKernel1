@@ -2882,8 +2882,12 @@ static bool should_skip_mm(struct mm_struct *mm, struct mm_walk_args *args)
 			       get_mm_counter(mm, MM_SHMEMPAGES);
 	}
 
-	pgtables = PTRS_PER_PTE * sizeof(pte_t) * atomic_long_read(&mm->nr_ptes);
-	pgtables += PTRS_PER_PMD * sizeof(pmd_t) * mm_nr_pmds(mm);
+	/*
+	 * This tree does not account page table pages (no mm->nr_ptes),
+	 * so the sparseness heuristic below only compares against the
+	 * mapped size; the walk stays correct, just slightly less picky.
+	 */
+	pgtables = 0;
 
 	/* leave the legwork to the rmap if mappings are too sparse */
 	if (size < max(SWAP_CLUSTER_MAX, pgtables / PAGE_SIZE))
@@ -3774,7 +3778,7 @@ static bool sort_page(struct page *page, struct lruvec *lruvec, int tier_to_isol
 		success = lru_gen_deletion(page, lruvec);
 		VM_BUG_ON_PAGE(!success, page);
 		SetPageSwapBacked(page);
-		add_page_to_lru_list_tail(page, lruvec);
+		add_page_to_lru_list_tail(page, lruvec, page_lru(page));
 		return true;
 	}
 
@@ -4276,7 +4280,7 @@ static bool fill_lru_gen_lists(struct lruvec *lruvec)
 
 			prefetchw_prev_lru_page(page, head, flags);
 
-			del_page_from_lru_list(page, lruvec);
+			del_page_from_lru_list(page, lruvec, page_lru(page));
 			success = lru_gen_addition(page, lruvec, true);
 			VM_BUG_ON(!success);
 
@@ -4313,7 +4317,7 @@ static bool drain_lru_gen_lists(struct lruvec *lruvec)
 
 			success = lru_gen_deletion(page, lruvec);
 			VM_BUG_ON(!success);
-			add_page_to_lru_list(page, lruvec);
+			add_page_to_lru_list(page, lruvec, page_lru(page));
 
 			if (++batch_size == MAX_BATCH_SIZE)
 				return false;
