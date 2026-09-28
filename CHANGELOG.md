@@ -3,6 +3,15 @@
 Full feature documentation lives in RELEASE_NOTES.md (repo). This file is
 what gets attached to each release: only what changed in that build.
 
+## #81 — full-repo audit bug fix
+- selinux_hide: context-hiding rule matcher switched to bounded
+  `strnchr`/`strnstr` (upstream KernelSU hardening) — prevents a hidden
+  source-type rule from matching inside the target half of a context
+  string (audit finding #1, low severity, no user-visible change expected)
+- kallsyms: removed a dead extern declaration found in the audit
+- RELEASE_NOTES.md: recorded the Evolution X A17 test result in the full
+  docs
+
 ## #80 — release notes format change
 - Release bodies are now short changelogs (this file) instead of the full
   feature doc; full docs stay in RELEASE_NOTES.md in the repo
