@@ -4,9 +4,9 @@ Full feature documentation lives in RELEASE_NOTES.md (repo). This file is
 what gets attached to each release: only what changed in that build.
 
 ## #82 — README rewrite
-- Proper GitHub-style README: supported devices, features, Android
-  version support (incl. A17 tested on Evolution X), flashing steps,
-  credits — replaces the old spec-sheet style README
+- Short, normal README: devices, features, KernelSU + manager in
+  release, A17 tested on Evolution X, flashing — replaces the old
+  spec-sheet README
 - No functional kernel changes since #81
 
 ## #81 — full-repo audit bug fix
