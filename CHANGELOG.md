@@ -3,10 +3,9 @@
 Full feature documentation lives in RELEASE_NOTES.md (repo). This file is
 what gets attached to each release: only what changed in that build.
 
-## #85 — A15 ROM config alignment
+## #82 — A15 ROM config alignment + README rewrite
 - Enabled MSDOS_FS, EXT4_ENCRYPTION, NETFILTER_XT_TARGET_TRACE (matches A15 ROM kernels)
-
-## #82-#84 — README rewrite (docs only)
+- New short README (devices, features, flashing); A17 tested note kept
 
 ## #81 — audit fixes (selinux_hide matcher, kallsyms cleanup)
 
