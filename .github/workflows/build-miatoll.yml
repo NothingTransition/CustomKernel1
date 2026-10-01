@@ -8,9 +8,6 @@ on:
     paths:
       - ".github/workflows/build-miatoll.yml"
       - "AnyKernel3/**"
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
       - "arch/**"
       - "block/**"
       - "certs/**"
