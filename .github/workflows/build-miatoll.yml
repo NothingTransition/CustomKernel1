@@ -8,6 +8,9 @@ on:
     paths:
       - ".github/workflows/build-miatoll.yml"
       - "AnyKernel3/**"
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
       - "arch/**"
       - "block/**"
       - "certs/**"
@@ -239,7 +242,7 @@ jobs:
   release:
     name: Publish release
     needs: build
-    if: success()
+    if: false # TEMP: artifact-only test build — no release until tested. Restore to success() before the official build.
     runs-on: ubuntu-24.04
     permissions:
       contents: write
