@@ -2,35 +2,6 @@ name: Build Miatoll Kernel
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - arena/01a0bfbb-customkernel1
-    paths:
-      - ".github/workflows/build-miatoll.yml"
-      - "AnyKernel3/**"
-      - "arch/**"
-      - "block/**"
-      - "certs/**"
-      - "crypto/**"
-      - "drivers/**"
-      - "firmware/**"
-      - "fs/**"
-      - "include/**"
-      - "init/**"
-      - "ipc/**"
-      - "kernel/**"
-      - "lib/**"
-      - "mm/**"
-      - "net/**"
-      - "scripts/**"
-      - "security/**"
-      - "sound/**"
-      - "techpack/**"
-      - "usr/**"
-      - "virt/**"
-      - "Makefile"
-      - "Kbuild"
-      - "Kconfig"
 
 permissions:
   contents: read
@@ -235,6 +206,7 @@ jobs:
           if-no-files-found: error
           compression-level: 9
           retention-days: 90
+
   release:
     name: Publish release
     needs: build
