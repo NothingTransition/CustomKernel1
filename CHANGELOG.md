@@ -3,20 +3,12 @@
 Full feature documentation lives in RELEASE_NOTES.md (repo). This file is
 what gets attached to each release: only what changed in that build.
 
-## #82 — README rewrite
-- Short, normal README: devices, features, KernelSU + manager in
-  release, A17 tested on Evolution X, flashing — replaces the old
-  spec-sheet README
-- No functional kernel changes since #81
+## #85 — A15 ROM config alignment
+- Enabled MSDOS_FS, EXT4_ENCRYPTION, NETFILTER_XT_TARGET_TRACE (matches A15 ROM kernels)
 
-## #81 — full-repo audit bug fix
-- selinux_hide: context-hiding rule matcher switched to bounded
-  `strnchr`/`strnstr` (upstream KernelSU hardening) — prevents a hidden
-  source-type rule from matching inside the target half of a context
-  string (audit finding #1, low severity, no user-visible change expected)
-- kallsyms: removed a dead extern declaration found in the audit
-- RELEASE_NOTES.md: recorded the Evolution X A17 test result in the full
-  docs
+## #82-#84 — README rewrite (docs only)
+
+## #81 — audit fixes (selinux_hide matcher, kallsyms cleanup)
 
 ## #80 — release notes format change
 - Release bodies are now short changelogs (this file) instead of the full
