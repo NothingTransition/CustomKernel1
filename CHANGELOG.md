@@ -3,6 +3,11 @@
 Full feature documentation lives in RELEASE_NOTES.md (repo). This file is
 what gets attached to each release: only what changed in that build.
 
+## #88 — I2C error-handling fix
+- i2c-qcom-geni: fixed transfer errors being cleared before the error check, so
+  I2C failures are now handled properly (matches upstream); targets the
+  no-vibration issue on crDroid A13 ROMs
+
 ## #82 — A15 ROM config alignment + README rewrite
 - Enabled MSDOS_FS, EXT4_ENCRYPTION, NETFILTER_XT_TARGET_TRACE (matches A15 ROM kernels)
 - New short README (devices, features, flashing); A17 tested note kept
