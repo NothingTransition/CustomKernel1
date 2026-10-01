@@ -3,6 +3,11 @@
 Full feature documentation lives in RELEASE_NOTES.md (repo). This file is
 what gets attached to each release: only what changed in that build.
 
+## #83 — vibration fix for custom ROMs
+- aw8624 haptic input device renamed to "qti-haptics" on QCOM (matches ROM
+  kernels) — A13 ROM vibrator HALs find it by that name; fixes no-vibration
+  on crDroid A13
+
 ## #82 — A15 ROM config alignment + README rewrite
 - Enabled MSDOS_FS, EXT4_ENCRYPTION, NETFILTER_XT_TARGET_TRACE (matches A15 ROM kernels)
 - New short README (devices, features, flashing); A17 tested note kept
