@@ -3,6 +3,9 @@
 Full feature documentation lives in RELEASE_NOTES.md (repo). This file is
 what gets attached to each release: only what changed in that build.
 
+## #90 — per-manager driver number display
+- KSUN manager now reads KSUN's own driver number (33294); shipped manager keeps 32651 — no mixed display
+
 ## #89 — manager choice: KernelSU-Next manager trusted + attached
 - Kernel now also trusts the official KSUN manager signature; KSUN manager APK attached in releases alongside ours
 - Each manager is reported its own driver number (no mixed version display between managers)
