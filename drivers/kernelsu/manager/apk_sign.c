@@ -360,5 +360,13 @@ bool is_manager_apk(char *path)
 	if (check_v2_signature(path, 0x375, "484fcba6e6c43b1fb09700633bf2fb4758f13cb0b2f4457b80d075084b26c588"))
 		return true;
 
+	// KernelSU-Next manager
+	if (check_v2_signature(path, 0x3e6, "79e590113c4c4c0c222978e413a5faa801666957b1212a328e46c00c69821bf7"))
+		return true;
+
+	// ReSukiSU manager
+	if (check_v2_signature(path, 0x377, "d3469712b6214462764a1d8d3e5cbe1d6819a0b629791b9f4101867821f1df64"))
+		return true;
+
 	return false;
 }
