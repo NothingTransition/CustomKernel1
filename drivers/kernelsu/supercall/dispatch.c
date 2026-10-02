@@ -28,6 +28,8 @@ static int do_get_info(void __user *arg)
 	if (is_manager()) {
 		cmd.flags |= KSU_GET_INFO_FLAG_MANAGER;
 	}
+	if (is_manager() && ksu_manager_kind == 2)
+		cmd.version = 33294; /* report KernelSU-Next's own driver number to its manager */
 	cmd.features = KSU_FEATURE_MAX;
 	cmd.uapi_version = KERNEL_SU_UAPI_VERSION;
 

@@ -330,6 +330,8 @@ int get_pkg_from_apk_path(char *pkg, const char *path)
 	return 0;
 }
 
+int ksu_manager_kind; // which trusted manager was detected: 1 official, 2 KSUN
+
 bool is_manager_apk(char *path)
 {
 #ifdef KSU_MANAGER_PACKAGE
@@ -346,12 +348,16 @@ bool is_manager_apk(char *path)
 #endif
 
 	// KernelSU official (backslashxx default / shipped manager)
-	if (check_v2_signature(path, EXPECTED_SIZE, EXPECTED_HASH))
+	if (check_v2_signature(path, EXPECTED_SIZE, EXPECTED_HASH)) {
+		ksu_manager_kind = 1;
 		return true;
+	}
 
 	// KernelSU-Next manager
-	if (check_v2_signature(path, 0x3e6, "79e590113c4c4c0c222978e413a5faa801666957b1212a328e46c00c69821bf7"))
+	if (check_v2_signature(path, 0x3e6, "79e590113c4c4c0c222978e413a5faa801666957b1212a328e46c00c69821bf7")) {
+		ksu_manager_kind = 2;
 		return true;
+	}
 
 	return false;
 }

@@ -3,8 +3,9 @@
 Full feature documentation lives in RELEASE_NOTES.md (repo). This file is
 what gets attached to each release: only what changed in that build.
 
-## #83 — manager choice: KernelSU-Next manager trusted + attached
+## #89 — manager choice: KernelSU-Next manager trusted + attached
 - Kernel now also trusts the official KSUN manager signature; KSUN manager APK attached in releases alongside ours
+- Each manager is reported its own driver number (no mixed version display between managers)
 
 ## #82 — A15 ROM config alignment + README rewrite
 - Enabled MSDOS_FS, EXT4_ENCRYPTION, NETFILTER_XT_TARGET_TRACE (matches A15 ROM kernels)
