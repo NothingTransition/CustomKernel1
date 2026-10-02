@@ -323,6 +323,20 @@ static int cpu_boost_init(void)
 	INIT_WORK(&input_boost_work, do_input_boost);
 	INIT_DELAYED_WORK(&input_boost_rem, do_input_boost_rem);
 
+	/*
+	 * Stormbreaker: sane touch-boost default so the UI responds instantly
+	 * even on ROMs whose init tuning never reaches us (1.8GHz, little-core
+	 * max OPP; big cores round to nearest OPP). ROMs can still override
+	 * via /sys/module/cpu_boost/parameters/input_boost_freq.
+	 */
+	{
+		int cpu;
+
+		for_each_possible_cpu(cpu)
+			per_cpu(sync_info, cpu).input_boost_freq = 1804800;
+		input_boost_enabled = true;
+	}
+
 	for_each_possible_cpu(cpu) {
 		s = &per_cpu(sync_info, cpu);
 		s->cpu = cpu;

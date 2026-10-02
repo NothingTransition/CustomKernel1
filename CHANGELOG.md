@@ -3,6 +3,10 @@
 Full feature documentation lives in RELEASE_NOTES.md (repo). This file is
 what gets attached to each release: only what changed in that build.
 
+## #91 — smoothness pass
+• Touch input-boost enabled by default (1.8GHz, kernel-side, ROM-independent)
+• Timer tick 100Hz → 300Hz for finer UI scheduling
+
 ## #90 — per-manager driver number display
 - KSUN manager now reads KSUN's own driver number (33294); shipped manager keeps 32651 — no mixed display
 
