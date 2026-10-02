@@ -2,6 +2,35 @@ name: Build Miatoll Kernel
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - arena/01a0bfbb-customkernel1
+    paths:
+      - ".github/workflows/build-miatoll.yml"
+      - "AnyKernel3/**"
+      - "arch/**"
+      - "block/**"
+      - "certs/**"
+      - "crypto/**"
+      - "drivers/**"
+      - "firmware/**"
+      - "fs/**"
+      - "include/**"
+      - "init/**"
+      - "ipc/**"
+      - "kernel/**"
+      - "lib/**"
+      - "mm/**"
+      - "net/**"
+      - "scripts/**"
+      - "security/**"
+      - "sound/**"
+      - "techpack/**"
+      - "usr/**"
+      - "virt/**"
+      - "Makefile"
+      - "Kbuild"
+      - "Kconfig"
 
 permissions:
   contents: read
@@ -237,6 +266,11 @@ jobs:
             -p 'KernelSU_v3.3.0-52_*-release.apk' -D release-assets
           mv release-assets/KernelSU_v3.3.0-52_*-release.apk \
              release-assets/KernelSU-manager.apk
+          # second manager option: KernelSU-Next (kernel trusts its signature)
+          gh release download v3.4.0 -R KernelSU-Next/KernelSU-Next \
+            -p 'KernelSU_Next_v3.4.0_33294-release.apk' -D release-assets
+          mv release-assets/KernelSU_Next_v3.4.0_33294-release.apk \
+             release-assets/KernelSU-Next-manager.apk
           gh release download v0.0.68 -R rrr333nnn333/BRENE \
             -p 'BRENE-v0.0.68.zip' -D release-assets
           gh release download v2.0.0 -R maxsteeel/nomount \
@@ -245,6 +279,7 @@ jobs:
              release-assets/NoMount-v2.0.0.zip
           # sanity: all three must be zip/apk archives
           head -c2 release-assets/KernelSU-manager.apk | grep -q PK
+          head -c2 release-assets/KernelSU-Next-manager.apk | grep -q PK
           head -c2 release-assets/BRENE-v0.0.68.zip | grep -q PK
           head -c2 release-assets/NoMount-v2.0.0.zip | grep -q PK
           ls -la release-assets/
@@ -280,6 +315,7 @@ jobs:
             --notes-file release-notes.md \
             release-assets/Stormbreaker-miatoll-*.zip \
             release-assets/KernelSU-manager.apk \
+            release-assets/KernelSU-Next-manager.apk \
             release-assets/BRENE-v0.0.68.zip \
             release-assets/NoMount-v2.0.0.zip
           gh release view "$TAG" --json url --jq '.url'
