@@ -3,6 +3,16 @@
 Full feature documentation lives in RELEASE_NOTES.md (repo). This file is
 what gets attached to each release: only what changed in that build.
 
+## #99 — memory tuned to the installed RAM (4/6/8 GB)
+• The kernel now measures installed RAM at boot and applies the matching memory profile — one zip, three tiers, so a 4 GB phone and an 8 GB phone stop sharing one compromise
+• kswapd reserve (the anti-stutter knob) raised: ~40 MB on every tier instead of ~7 MB on 4 GB — allocations now drain in the background instead of falling into direct reclaim
+• Page-at-a-time swapin: swap page-cluster 3 → 0 for all tiers (zram is random access, swap readahead there was pure waste)
+• swappiness 60 → 100 on all tiers — these devices swap to zram, not to disk, so anon pages are cheap to reclaim
+• 4 GB: vfs_cache_pressure 150, dirty limits 10%/5% • 6 GB: 125, 15%/5% • 8 GB: kernel defaults kept
+• MGLRU's aging rate is now set per tier too (0/1/2), so if you turn MGLRU on it is already tuned for your RAM
+• Every value is still an ordinary sysctl (`/proc/sys/vm/...`) — ROM init scripts or root can override any of it
+• Note: MGLRU is still OFF by default, unchanged (see RELEASE_NOTES.md)
+
 ## #98 — MGLRU restored (+ the build fix that was hiding behind it)
 • Multigenerational LRU is back in the build — the port was sitting in mm/ all along, but the defconfig lines had been dropped as "dead", so MGLRU had silently disappeared from recent kernels
 • Fixed a link failure from the previous memory pass: turning on ZSMALLOC_STAT force-selects DEBUG_FS (it is a debugfs feature), which pulled in a debugfs-only msm_bus file whose tracepoints were never instantiated — `undefined symbol: __tracepoint_bus_update_request`. ZSMALLOC_STAT is off again (kernel stays a non-debugfs build) and the missing tracepoint instantiation is fixed at the source

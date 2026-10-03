@@ -19,6 +19,7 @@ One zip for all four — it ships its own DTB and DTBO.
 - SUSFS v2.3.0 + NoMount v2.0.0 hiding stack, BRENE module bundled
 - BFQ I/O scheduler and TCP BBR by default
 - MGLRU backport (compiled in, off by default, runtime toggle)
+- Memory tuned to installed RAM — 4/6/8 GB profiles applied at boot (kswapd reserve, swappiness, cache pressure, dirty limits, swapin readahead)
 - ext4, F2FS (compression + encryption), EROFS, exFAT, NTFS
 - Android 13–17 support — **A17 tested and working on Evolution X**
 

@@ -28,7 +28,20 @@ Linux 4.14.357-openela · built with Clang/LLVM 18 · A-only flash
 - **BLK_WBT** block writeback throttling (sq + mq) — smooths background writes so foreground operations stay responsive
 
 ### Memory
-- **Multigenerational LRU (MGLRU)** — backported from the Android 4.14 FROMLIST/BACKPORT series and compiled into the kernel (builds #97+ verify the symbols are linked in), **OFF by default** (stock/classic reclaim runs out of the box; early field report of a hang during idle charging under MGLRU — kept available for testing but not enabled)
+- **RAM-tier auto-tuning** — one image covers the whole miatoll family (4/6/8 GB), so the kernel detects installed RAM at boot and applies the profile that fits instead of one compromise for all. All values stay ordinary sysctls, so ROM init scripts / root can still override them:
+
+  | knob | 4 GB | 6 GB | 8 GB |
+  |---|---|---|---|
+  | kswapd reserve (`watermark_scale_factor`) | ~38 MB | ~43 MB | ~39 MB |
+  | `swappiness` | 100 | 100 | 100 |
+  | `vfs_cache_pressure` | 150 | 125 | 100 |
+  | `dirty_ratio` / `dirty_background_ratio` | 10 / 5 | 15 / 5 | 20 / 10 |
+  | `page_cluster` (swapin readahead) | 0 | 0 | 0 |
+
+  - The **kswapd reserve** is the anti-stutter one: stock leaves only ~7 MB on 4 GB, which is not enough to absorb an allocation burst, so the kernel falls into *direct* reclaim and everything stalls. ~40 MB on every tier lets reclaim happen in the background where it belongs.
+  - **`swappiness = 100`** because swap here is zram (compressed RAM), not a disk — the 60 default is a rotating-disk heuristic that leaves zram underused.
+  - **`page_cluster = 0`** because zram is random access: reading 8 pages to satisfy a 1-page swapin is wasted work.
+- **Multigenerational LRU (MGLRU)** — backported from the Android 4.14 FROMLIST/BACKPORT series and compiled into the kernel (builds #97+ verify the symbols are linked in), **OFF by default** (stock/classic reclaim runs out of the box; early field report of a hang during idle charging under MGLRU — kept available for testing but not enabled). Its aging rate is now tuned per RAM tier, so enabling it needs no further setup.
   - Switch ON: `su -c "echo 1 > /sys/kernel/mm/lru_gen/enabled"`
   - Switch OFF: `su -c "echo 0 > /sys/kernel/mm/lru_gen/enabled"`
   - Check state: `su -c "cat /sys/kernel/mm/lru_gen/enabled"` (0 = classic, 1 = MGLRU)
