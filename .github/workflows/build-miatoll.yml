@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - arena/01a0bfbb-customkernel1
+      - arena/01a1039d-customkernel1
     paths:
       - ".github/workflows/build-miatoll.yml"
       - "AnyKernel3/**"
@@ -115,6 +116,12 @@ jobs:
           require_config 'CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y'
           require_config 'CONFIG_KSU_SUSFS_OPEN_REDIRECT=y'
           require_config 'CONFIG_NOMOUNT=y'
+          # MGLRU: the code is in mm/, so it must actually be compiled in.
+          # A previous pass dropped these lines (feature silently missing).
+          require_config 'CONFIG_LRU_GEN=y'
+          require_config '# CONFIG_LRU_GEN_ENABLED is not set'
+          require_config 'CONFIG_NR_LRU_GENS=7'
+          require_config 'CONFIG_TIERS_PER_GEN=4'
           require_config '# CONFIG_KPROBES is not set'
           require_config 'CONFIG_EROFS_FS=y'
           require_config 'CONFIG_EROFS_FS_ZIP=y'
@@ -198,6 +205,12 @@ jobs:
           grep -q ' susfs_add_sus_map$' vmlinux.sym
           grep -q ' nomount_init$' vmlinux.sym
 
+          # MGLRU must be linked in, not just configured on.
+          grep -q ' lru_gen_set_state$' vmlinux.sym
+          grep -q ' lru_gen_init_lruvec$' vmlinux.sym
+          grep -q ' lru_gen_init_mm$' vmlinux.sym
+          grep -q ' lru_gen_eviction$' vmlinux.sym
+
           make -s O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- kernelrelease | tee kernel.release
           sha256sum \
@@ -211,7 +224,7 @@ jobs:
             echo "toolchain.source=ubuntu-24.04-llvm"
             clang --version | head -n 1 | sed 's/^/clang.version=/'
             ld.lld --version | head -n 1 | sed 's/^/lld.version=/'
-            grep -E '^(CONFIG_KSU|CONFIG_NOMOUNT|CONFIG_EROFS_FS|CONFIG_NTFS_FS|CONFIG_BPF_SYSCALL|CONFIG_MODULE_SIG_FORCE)' out/.config || true
+            grep -E '^(CONFIG_KSU|CONFIG_NOMOUNT|CONFIG_LRU_GEN|CONFIG_NR_LRU_GENS|CONFIG_TIERS_PER_GEN|CONFIG_EROFS_FS|CONFIG_NTFS_FS|CONFIG_BPF_SYSCALL|CONFIG_MODULE_SIG_FORCE)' out/.config || true
           } | tee build-info.txt
 
       - name: Package AnyKernel3 flashable zip

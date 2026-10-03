@@ -3,6 +3,11 @@
 Full feature documentation lives in RELEASE_NOTES.md (repo). This file is
 what gets attached to each release: only what changed in that build.
 
+## #97 — MGLRU restored (compiled into the kernel for real)
+• Multigenerational LRU is back in the build — the port was sitting in mm/ all along, but the defconfig lines had been dropped as "dead", so MGLRU had silently disappeared from recent kernels
+• CI now hard-requires the MGLRU options and verifies the symbols are linked into the kernel image, so it can't go missing silently again
+• Still OFF by default (there is an old idle-charging hang report with it enabled): switch on with `su -c "echo 1 > /sys/kernel/mm/lru_gen/enabled"`, check with `su -c "cat /sys/kernel/mm/lru_gen/enabled"` — resets to off on reboot
+
 ## #96 — memory management pass
 • zram default compression upgraded from lzo to lz4 — faster decompress AND better ratio (biggest win on 4GB devices)
 • zstd now compiled in for zram — switch live via `echo zstd > /sys/block/zram0/comp_algorithm` (better compression, more CPU)

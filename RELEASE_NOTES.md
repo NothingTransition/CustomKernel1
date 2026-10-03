@@ -28,7 +28,7 @@ Linux 4.14.357-openela · built with Clang/LLVM 18 · A-only flash
 - **BLK_WBT** block writeback throttling (sq + mq) — smooths background writes so foreground operations stay responsive
 
 ### Memory
-- **Multigenerational LRU (MGLRU)** — backported from the Android 4.14 FROMLIST/BACKPORT series, **OFF by default** (stock/classic reclaim runs out of the box; early field report of a hang during idle charging under MGLRU — kept available for testing but not enabled)
+- **Multigenerational LRU (MGLRU)** — backported from the Android 4.14 FROMLIST/BACKPORT series and compiled into the kernel (builds #97+ verify the symbols are linked in), **OFF by default** (stock/classic reclaim runs out of the box; early field report of a hang during idle charging under MGLRU — kept available for testing but not enabled)
   - Switch ON: `su -c "echo 1 > /sys/kernel/mm/lru_gen/enabled"`
   - Switch OFF: `su -c "echo 0 > /sys/kernel/mm/lru_gen/enabled"`
   - Check state: `su -c "cat /sys/kernel/mm/lru_gen/enabled"` (0 = classic, 1 = MGLRU)
