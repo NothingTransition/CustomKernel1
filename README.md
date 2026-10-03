@@ -21,7 +21,7 @@ One zip for all four — it ships its own DTB and DTBO.
 - MGLRU backport (compiled in, off by default, runtime toggle)
 - Memory tuned to installed RAM — 4/6/8 GB profiles applied at boot (kswapd reserve, swappiness, cache pressure, dirty limits, swapin readahead)
 - ext4, F2FS (compression + encryption), EROFS, exFAT, NTFS
-- Android 13–17 support — **A17 tested and working on Evolution X**; full ACK eBPF backport compiled in (ring buffer, in-kernel BTF, iterators, trampolines, **BPF LSM**, sockmap) — see RELEASE_NOTES for the A16/A17 compatibility audit
+- Android 13–17 support — **A17 tested and working on Evolution X**; full ACK eBPF backport compiled in (ring buffer, in-kernel BTF, iterators, trampolines, **BPF LSM**) — sockmap/sk_msg stays off because that part of the backport does not compile here; see RELEASE_NOTES for the A16/A17 compatibility audit
 
 ## Flash
 

@@ -1217,7 +1217,15 @@ CONFIG_CGROUP_NET_PRIO=y
 CONFIG_NET_RX_BUSY_POLL=y
 CONFIG_BQL=y
 CONFIG_BPF_JIT=y
-CONFIG_BPF_STREAM_PARSER=y
+# BPF_STREAM_PARSER (sockmap/sk_msg) is deliberately OFF: it selects
+# NET_SOCK_MSG, which builds net/core/skmsg.c, and that file does not
+# compile in this tree. sk_psock_init() reads "prot" without the
+# declaration the 5.x original had, i.e. the sockmap/sk_msg part of this
+# eBPF backport is incomplete and has never been built here. Build #103
+# failed on exactly that:
+#   ../net/core/skmsg.c:493:25: error: use of undeclared identifier 'prot'
+# Enabling it needs real porting plus runtime testing, not a config toggle.
+# CONFIG_BPF_STREAM_PARSER is not set
 CONFIG_NET_FLOW_LIMIT=y
 CONFIG_SOCKEV_NLMCAST=y
 
@@ -5958,11 +5966,12 @@ CONFIG_SCHEDSTATS=y
 CONFIG_SCHED_DEBUG=y
 CONFIG_EROFS_FS_PCPU_KTHREAD_HIPRI=y
 
-# Android 17 eBPF parity: the full ACK eBPF backport is in this tree
-# (ringbuf, BTF, iterators, trampolines, local storage, struct_ops). BPF LSM
-# and the stream parser were present but switched off, and CONFIG_LSM already
-# listed "bpf" (a dead entry) - both are now enabled in their normal places
-# above. Android 16+ leans on the newer eBPF feature set.
+# Android 17 eBPF parity: the ACK eBPF backport is in this tree (ringbuf, BTF,
+# iterators, trampolines, local storage, struct_ops). BPF LSM was present but
+# switched off, and CONFIG_LSM already listed "bpf" (a dead entry) - it is now
+# enabled in its normal place above. Android 16+ leans on the newer eBPF
+# feature set. BPF_STREAM_PARSER (sockmap/sk_msg) is still off on purpose: its
+# skmsg.c does not compile here (see the note in the net section above).
 # CONFIG_SECURITY_SELINUX_BOOTPARAM (enabled in the SELinux block above) adds
 # the kernel "selinux=" cmdline parameter for bring-up/debug. It does NOT make
 # the kernel permissive: the enforcement default comes from

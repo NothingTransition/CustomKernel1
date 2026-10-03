@@ -146,7 +146,10 @@ jobs:
           # Android 17 / AOSP userspace parity: the gate for Android 16+ on
           # non-GKI 4.14 is the newer eBPF feature set. These must stay on.
           require_config 'CONFIG_BPF_LSM=y'
-          require_config 'CONFIG_BPF_STREAM_PARSER=y'
+          # BPF_STREAM_PARSER must stay off until net/core/skmsg.c is ported
+          # properly; it does not compile in this tree (sk_psock_init()'s
+          # 'prot' is undeclared) and that broke build #103.
+          require_config '# CONFIG_BPF_STREAM_PARSER is not set'
           require_config 'CONFIG_BPF_JIT_ALWAYS_ON=y'
           require_config 'CONFIG_BPF_UNPRIV_DEFAULT_OFF=y'
           require_config 'CONFIG_PSI=y'

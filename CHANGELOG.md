@@ -3,6 +3,13 @@
 Full feature documentation lives in RELEASE_NOTES.md (repo). This file is
 what gets attached to each release: only what changed in that build.
 
+## #104 — fix the #103 build failure: keep BPF LSM, defer the stream parser
+• Build #103 failed in `net/core/skmsg.c:493` — `use of undeclared identifier 'prot'`. The sockmap/sk_msg half of this tree's eBPF backport is **incomplete**; it had simply never been compiled because `CONFIG_BPF_STREAM_PARSER` was always off, so nothing caught it until now
+• `BPF_STREAM_PARSER` is off again — this time on purpose, with the exact error recorded in the defconfig and a CI rule that hard-requires it to stay off (`# CONFIG_BPF_STREAM_PARSER is not set`) so a later edit cannot silently bring the broken file back. It selects `NET_SOCK_MSG`; that has only two other selectors (TLS, and BPF_STREAM_PARSER itself), both off, so neither `skmsg.o` nor `sock_map.o` is built
+• **BPF LSM stays on.** Before trusting it, every object it newly pulls in was audited against this tree: `lsm_prog_ops`, `lsm_verifier_ops` and `inode_storage_map_ops` are defined; `btf_id_set_contains`/`btf_ctx_access` are not gated behind `CONFIG_DEBUG_INFO_BTF` in this tree; `tracing_prog_func_proto` is compiled (`CONFIG_BPF_EVENTS=y`); `security_add_hooks` is the 3-arg form, and `DEFINE_LSM`/`lsm_blob_sizes` exist. All the dependencies `bpf_lsm.c`, `bpf_inode_storage.c` and `security/bpf/hooks.c` link against resolve
+• README/RELEASE_NOTES corrected: they claimed sockmap/stream parser support, which was never true in a shipped build; it is now listed as a stated gap in the A16/A17 audit
+• Nothing else changes: same RAM-tier tuning, same KernelSU/SUSFS/NoMount stack, same A17 userspace configuration
+
 ## #102 — fix config symbols that a duplicate line was silently disabling
 • Two defconfig entries appeared twice — once as `=y`, then again later as `# ... is not set`. kconfig applies lines in order and the **last one wins**, so both were actually OFF: `CONFIG_NETFILTER_XT_TARGET_TRACE` (so `iptables -j TRACE` was missing despite the release notes claiming A15 parity) and `CONFIG_EXT4_ENCRYPTION`
 • EXT4_ENCRYPTION turned out harmless — it is deprecated and only exists to select FS_ENCRYPTION, which was set directly, so ext4 FBE always worked. The TRACE target was genuinely absent and is now really enabled

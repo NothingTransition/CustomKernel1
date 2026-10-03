@@ -69,13 +69,13 @@ Linux 4.14.357-openela · built with Clang/LLVM 18 · A-only flash
 
 ### Android 16/17 compatibility — what a non-GKI 4.14 kernel actually needs
 
-Google's support matrix lists only ACK kernels (5.10 and newer) for A16/A17, so 4.14 is a **legacy** path. What decides it in practice is **eBPF**: Android 16+ leans on the newer eBPF feature set, and the requirement on old kernels is "1:1 eBPF backports, feature equivalent to Linux 5.4". This tree carries the full ACK eBPF backport — a **superset of 5.4** (BPF ring buffer, in-kernel BTF, BPF iterators, trampolines + dispatcher, local/inode storage, struct_ops, bpf_fs). Builds #101+ also compile in **BPF LSM** and the **BPF stream parser**, which were present in the tree but switched off (`CONFIG_LSM` already listed `bpf`, so that entry was dead).
+Google's support matrix lists only ACK kernels (5.10 and newer) for A16/A17, so 4.14 is a **legacy** path. What decides it in practice is **eBPF**: Android 16+ leans on the newer eBPF feature set, and the requirement on old kernels is "1:1 eBPF backports, feature equivalent to Linux 5.4". This tree carries the full ACK eBPF backport — a **superset of 5.4** (BPF ring buffer, in-kernel BTF, BPF iterators, trampolines + dispatcher, local/inode storage, struct_ops, bpf_fs). Builds #104+ also compile in **BPF LSM**, which was present in the tree but switched off (`CONFIG_LSM` already listed `bpf`, so that entry was dead). The **BPF stream parser** (sockmap/sk_msg) had to stay off: turning it on broke the first build that tried (#103) and the reason is in the tree's code, not the config — see the gap list below.
 
 Android userspace requirements verified present in this kernel:
 
 | Area | What the kernel provides |
 |---|---|
-| eBPF | syscall + JIT (JIT always-on, unprivileged off), cgroup BPF, tc BPF, **BPF LSM**, sockmap/stream parser, ring buffer, iterators |
+| eBPF | syscall + JIT (JIT always-on, unprivileged off), cgroup BPF, tc BPF, **BPF LSM**, ring buffer, iterators (sockmap/sk_msg: see gaps) |
 | Memory / limits | PSI (on by default — used by lmkd), cgroups (sched, cpuacct, freezer, pids, devices, net_prio, cpuset), WALT + SCHED_TUNE + schedutil |
 | Security | SELinux (develop + bootparam + AVC stats, checkreqprot=0), namespaces incl. user, seccomp filter, KASLR, STRICT_KERNEL_RWX, HARDENED_USERCOPY, INIT_ON_ALLOC, PAN/UAO |
 | Storage / encryption | FBE (ext4 + f2fs encryption), metadata encryption (`dm-default-key`), AVB (`dm-verity`), fs-verity, project quotas, incremental FS, EROFS/exFAT/NTFS |
@@ -85,6 +85,7 @@ Android userspace requirements verified present in this kernel:
 Known gaps, stated plainly:
 
 - **uclamp is not in this tree at all** (no code — not merely disabled). Android task profiles can use uclamp to boost the foreground; here ROMs fall back to Qualcomm's WALT/SCHED_TUNE, which is what this SoC generation actually ships with. Adding uclamp means backporting 5.x scheduler-core changes — a project on its own, not a defconfig toggle.
+- **sockmap / sk_msg (`CONFIG_BPF_STREAM_PARSER`) is off, because the code in this tree cannot build.** The sockmap half of the eBPF backport is incomplete: `sk_psock_init()` in `net/core/skmsg.c` reads a local `prot` that the original 5.x version declares, and the line was left as-is when the backport was taken. Nobody noticed because the option was always off — build #103 was the first build to compile that file and died on it (`use of undeclared identifier 'prot'`). It is now off on purpose, CI hard-requires it to stay off, and a comment in the defconfig records the exact error. Making it work means porting/testing `skmsg.c` + `sock_map.c` properly; until then, BPF programs that use `BPF_MAP_TYPE_SOCKMAP` are not available. `BPF LSM` is unaffected (separate files).
 - **`CONFIG_DEBUG_INFO_BTF` is off.** It generates the kernel's own BTF for CO-RE (bpftrace/BCC and some loader paths) at the cost of debug info plus the `pahole` tool in the build — a bigger image and a longer build. ROMs boot fine without it; ask for an instrumented build if you need it.
 - **16 KB page size** (an Android 15+ requirement for *new* devices) isn't applicable here: this SoC's vendor blobs and this 4.14 tree are 4 KB-page. Apps are unaffected on a 4 KB kernel.
 - Intentionally off for performance/size, not compatibility: KPTI (`UNMAP_KERNEL_AT_EL0` — atoll's cores aren't Meltdown-affected), `FORTIFY_SOURCE`, `SCHED_AUTOGROUP`.
