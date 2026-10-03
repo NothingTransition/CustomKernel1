@@ -170,6 +170,14 @@ jobs:
           require_config 'CONFIG_EXT4_ENCRYPTION=y'
           require_config 'CONFIG_FS_ENCRYPTION=y'
           require_config 'CONFIG_NETFILTER_XT_TARGET_TRACE=y'
+          # Network tuning for mobile data (see net/net_tune.c): BBR stays the
+          # default congestion control and fq_codel becomes the default qdisc
+          # so the uplink queue cannot bufferbloat.
+          require_config 'CONFIG_TCP_CONG_BBR=y'
+          require_config 'CONFIG_DEFAULT_TCP_CONG="bbr"'
+          require_config 'CONFIG_NET_SCH_DEFAULT=y'
+          require_config 'CONFIG_DEFAULT_FQ_CODEL=y'
+          require_config 'CONFIG_NET_SCH_FQ_CODEL=y'
           # MGLRU: the code is in mm/, so it must actually be compiled in.
           # A previous pass dropped these lines (feature silently missing).
           require_config 'CONFIG_LRU_GEN=y'
@@ -267,6 +275,9 @@ jobs:
 
           # the RAM-tier tuning initcall must actually be in the image
           grep -q ' ram_tune_init$' vmlinux.sym
+
+          # and so must the network tuning initcall
+          grep -q ' net_tune_init$' vmlinux.sym
 
           # BPF LSM must be registered, not just configured on
           grep -q ' bpf_lsm_init$' vmlinux.sym

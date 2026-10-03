@@ -90,7 +90,53 @@ Known gaps, stated plainly:
 - **16 KB page size** (an Android 15+ requirement for *new* devices) isn't applicable here: this SoC's vendor blobs and this 4.14 tree are 4 KB-page. Apps are unaffected on a 4 KB kernel.
 - Intentionally off for performance/size, not compatibility: KPTI (`UNMAP_KERNEL_AT_EL0` — atoll's cores aren't Meltdown-affected), `FORTIFY_SOURCE`, `SCHED_AUTOGROUP`.
 
-## Assets
+### Network tuning: mobile data + WiFi
+
+The kernel cannot raise what the radio gives you — peak throughput is modem firmware, carrier provisioning, band and signal. What it *can* do is use the link well, and that is what this build tunes. Being precise about the difference matters, so here is the whole change set:
+
+| Knob | Value | Why | Change it back at runtime |
+|---|---|---|---|
+| `tcp_congestion_control` | `bbr` (already the default) | BBR behaves far better than CUBIC on lossy, high-RTT cellular links | `echo cubic > /proc/sys/net/ipv4/tcp_congestion_control` |
+| `net.core.default_qdisc` | `fq_codel` (new) | The old default was `pfifo_fast`, which just fills up: upload anything and RTT balloons, so everything *feels* slow. fq_codel keeps the queue delay low and stops one bulk flow from starving the rest — this is the "smooth" part | `echo pfifo_fast > /proc/sys/net/core/default_qdisc` |
+| `tcp_slow_start_after_idle` | `0` (new) | The stock default resets the congestion window whenever a flow has been idle, so the first seconds after the phone wakes are spent re-ramping | `echo 1 > /proc/sys/net/ipv4/tcp_slow_start_after_idle` |
+| `tcp_mtu_probing` | `1` (new) | Some carriers/CGNATs drop ICMP "fragmentation needed"; without probing, connections hang on large packets instead of finding an MSS that gets through | `echo 0 > /proc/sys/net/ipv4/tcp_mtu_probing` |
+
+Verify on the phone (root):
+
+```
+cat /proc/sys/net/ipv4/tcp_congestion_control      # bbr
+cat /proc/sys/net/core/default_qdisc               # fq_codel
+cat /proc/sys/net/ipv4/tcp_slow_start_after_idle   # 0
+cat /proc/sys/net/ipv4/tcp_mtu_probing             # 1
+```
+
+Two honest notes. A qdisc change applies to network devices created **after** it is set; the data interfaces (`rmnet_data*` for cellular, `wlan0`) are created at runtime after boot, so they get it — an interface that already existed keeps its old qdisc until recreated, or fix it per device with `tc qdisc replace dev <if> root fq_codel` (needs the `tc` tool). And explicitly **not** done here: raising `tcp_rmem`/`tcp_wmem`. Those windows are auto-tuned per connection and already sized for fast links; oversized static buffers don't raise throughput, they add queuing delay and pin memory. "Internet booster" scripts that do that are placebo.
+
+#### WiFi: what a kernel can and cannot do
+
+The driver is in this kernel (`qcacld-3.0`), but the settings that matter for WiFi speed and latency are read by that driver from the ROM's config file at load, not from the kernel image. Peak speed itself is decided by band (5 GHz vs 2.4 GHz), channel width, distance/RSSI and the AP — no kernel change touches that.
+
+The file is `WCNSS_qcom_cfg.ini`. Locate yours:
+
+```
+find /vendor /system/etc -name "WCNSS_qcom_cfg.ini" 2>/dev/null
+# common: /vendor/etc/wifi/WCNSS_qcom_cfg.ini
+```
+
+Keys this driver actually parses that are worth knowing (all confirmed present in this tree's qcacld):
+
+| Key | Effect | Trade-off |
+|---|---|---|
+| `gChannelBondingMode5GHz` | `1` enables 40/80 MHz bonding on 5 GHz — usually already 1 and the biggest single speed factor when it isn't | none if the AP supports it |
+| `gChannelBondingMode24GHz` | 40 MHz on 2.4 GHz | often **worse** in crowded 2.4 GHz — leave off unless you know your environment |
+| `gEnableAMPDU` | frame aggregation, leave `1` | disabling it always costs throughput |
+| `gEnableImps` / `gEnableBmps` | idle / beacon-mode power save; `0` = radio stays awake | less latency, **more battery drain** — this is the battery-vs-responsiveness dial |
+| `gEnableDynamicDTIM` / `gEnableModulatedDTIM` | dynamic/adaptive DTIM sleep (`0` = less sleeping) | same trade: latency vs battery |
+| `gTxPowerCap` | max TX power cap in dBm | changing it can hurt range or violate regulatory limits — leave alone |
+
+Editing the ini needs root and a rewrite of `/vendor` (Magisk module or overlay is the clean way); it is a ROM-side change, not a kernel one, so it is documented here rather than shipped in the image. If a specific ROM already sets these well, leave it alone.
+
+
 
 | File | What it is |
 |---|---|

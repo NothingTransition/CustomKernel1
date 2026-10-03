@@ -3,6 +3,13 @@
 Full feature documentation lives in RELEASE_NOTES.md (repo). This file is
 what gets attached to each release: only what changed in that build.
 
+## #105 — network tuning: fq_codel default qdisc + TCP defaults for cellular
+• BBR was already the default congestion control here; the missing half was the queue. The default qdisc was `pfifo_fast`, which just fills up — upload anything and RTT balloons, so the connection *feels* slow even at a good Speedtest number. `fq_codel` is now the default qdisc (`CONFIG_NET_SCH_DEFAULT=y` + `CONFIG_DEFAULT_FQ_CODEL=y`, applied by the kernel's own `sch_default_qdisc()` at boot), so the queue is actually managed and one flow cannot starve the rest
+• New `net/net_tune.c` (late_initcall, same pattern as `mm/ram_tune.c`) sets two TCP defaults: `tcp_slow_start_after_idle=0` — the congestion window is no longer reset after an idle period, so a resumed transfer does not start over from scratch — and `tcp_mtu_probing=1`, which survives carriers that drop ICMP "fragmentation needed" and otherwise hang on large packets. Both stay normal sysctls, so ROM init scripts and root can override them at runtime
+• Deliberately NOT done: raising `tcp_rmem`/`tcp_wmem`. Auto-tuning already sizes the windows for fast links and big static buffers only add queuing delay and pin memory. This is a smoothness/latency change, not a Speedtest-number change — the radio sets peak throughput, not the kernel
+• CI hard-requires the four network symbols and checks that `net_tune_init` is linked into vmlinux, in the same way `ram_tune_init` is
+• WiFi is unchanged in the kernel on purpose: the knobs that matter live in the ROM's `WCNSS_qcom_cfg.ini` and are read by the driver at load. RELEASE_NOTES documents the exact file and the keys this driver parses, plus the battery-vs-latency trade-offs
+
 ## #104 — fix the #103 build failure: keep BPF LSM, defer the stream parser
 • Build #103 failed in `net/core/skmsg.c:493` — `use of undeclared identifier 'prot'`. The sockmap/sk_msg half of this tree's eBPF backport is **incomplete**; it had simply never been compiled because `CONFIG_BPF_STREAM_PARSER` was always off, so nothing caught it until now
 • `BPF_STREAM_PARSER` is off again — this time on purpose, with the exact error recorded in the defconfig and a CI rule that hard-requires it to stay off (`# CONFIG_BPF_STREAM_PARSER is not set`) so a later edit cannot silently bring the broken file back. It selects `NET_SOCK_MSG`; that has only two other selectors (TLS, and BPF_STREAM_PARSER itself), both off, so neither `skmsg.o` nor `sock_map.o` is built
