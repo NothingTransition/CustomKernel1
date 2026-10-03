@@ -214,7 +214,7 @@ CONFIG_MEMBARRIER=y
 CONFIG_KALLSYMS=y
 # CONFIG_KALLSYMS_ABSOLUTE_PERCPU is not set
 CONFIG_KALLSYMS_BASE_RELATIVE=y
-# CONFIG_BPF_LSM is not set
+CONFIG_BPF_LSM=y
 CONFIG_BPF_SYSCALL=y
 CONFIG_ARCH_WANT_DEFAULT_BPF_JIT=y
 CONFIG_BPF_JIT_ALWAYS_ON=y
@@ -943,7 +943,6 @@ CONFIG_NETFILTER_XT_TARGET_NOTRACK=y
 CONFIG_NETFILTER_XT_TARGET_REDIRECT=y
 CONFIG_NETFILTER_XT_TARGET_TEE=y
 CONFIG_NETFILTER_XT_TARGET_TPROXY=y
-# CONFIG_NETFILTER_XT_TARGET_TRACE is not set
 CONFIG_NETFILTER_XT_TARGET_SECMARK=y
 CONFIG_NETFILTER_XT_TARGET_TCPMSS=y
 # CONFIG_NETFILTER_XT_TARGET_TCPOPTSTRIP is not set
@@ -1218,7 +1217,7 @@ CONFIG_CGROUP_NET_PRIO=y
 CONFIG_NET_RX_BUSY_POLL=y
 CONFIG_BQL=y
 CONFIG_BPF_JIT=y
-# CONFIG_BPF_STREAM_PARSER is not set
+CONFIG_BPF_STREAM_PARSER=y
 CONFIG_NET_FLOW_LIMIT=y
 CONFIG_SOCKEV_NLMCAST=y
 
@@ -5263,7 +5262,6 @@ CONFIG_EXT4_ENCRYPTION=y
 CONFIG_EXT4_USE_FOR_EXT2=y
 CONFIG_EXT4_FS_POSIX_ACL=y
 CONFIG_EXT4_FS_SECURITY=y
-# CONFIG_EXT4_ENCRYPTION is not set
 # CONFIG_EXT4_DEBUG is not set
 CONFIG_JBD2=y
 # CONFIG_JBD2_DEBUG is not set
@@ -5644,7 +5642,7 @@ CONFIG_HARDENED_USERCOPY=y
 CONFIG_STATIC_USERMODEHELPER=y
 CONFIG_STATIC_USERMODEHELPER_PATH=""
 CONFIG_SECURITY_SELINUX=y
-# CONFIG_SECURITY_SELINUX_BOOTPARAM is not set
+CONFIG_SECURITY_SELINUX_BOOTPARAM=y
 # CONFIG_SECURITY_SELINUX_DISABLE is not set
 CONFIG_SECURITY_SELINUX_DEVELOP=y
 CONFIG_SECURITY_SELINUX_AVC_STATS=y
@@ -5961,12 +5959,12 @@ CONFIG_SCHED_DEBUG=y
 CONFIG_EROFS_FS_PCPU_KTHREAD_HIPRI=y
 
 # Android 17 eBPF parity: the full ACK eBPF backport is in this tree
-# (ringbuf, BTF, iterators, trampolines, local storage, struct_ops), but
-# BPF LSM and the stream parser were left disabled, and CONFIG_LSM already
-# listed "bpf" (a dead entry). Android 16+ leans on the newer eBPF feature
-# set, so compile these in.
-CONFIG_BPF_LSM=y
-CONFIG_BPF_STREAM_PARSER=y
-# Let androidboot.selinux=permissive/disabled work (ROM bring-up and dev);
-# AOSP's own kernels ship this enabled.
-CONFIG_SECURITY_SELINUX_BOOTPARAM=y
+# (ringbuf, BTF, iterators, trampolines, local storage, struct_ops). BPF LSM
+# and the stream parser were present but switched off, and CONFIG_LSM already
+# listed "bpf" (a dead entry) - both are now enabled in their normal places
+# above. Android 16+ leans on the newer eBPF feature set.
+# CONFIG_SECURITY_SELINUX_BOOTPARAM (enabled in the SELinux block above) adds
+# the kernel "selinux=" cmdline parameter for bring-up/debug. It does NOT make
+# the kernel permissive: the enforcement default comes from
+# SECURITY_SELINUX_DEVELOP, and Android's init always sets the final state from
+# ro.boot.selinux, which is enforcing unless a ROM opts out.

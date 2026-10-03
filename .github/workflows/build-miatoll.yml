@@ -89,6 +89,26 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
+          # Reject duplicate config symbols first. kconfig applies lines in
+          # order and the LAST one wins, so a stale trailing "is not set"
+          # silently defeats an earlier "=y" (this already happened twice:
+          # ZSMALLOC_STAT, and EXT4_ENCRYPTION/NETFILTER_XT_TARGET_TRACE).
+          awk '
+            /^CONFIG_[A-Za-z0-9_]+=/ || /^# CONFIG_[A-Za-z0-9_]+ is not set/ {
+              n = $0
+              sub(/^# /, "", n); sub(/=.*/, "", n); sub(/ is not set/, "", n)
+              cnt[n]++; line[n] = line[n] " " NR
+            }
+            END {
+              bad = 0
+              for (s in cnt)
+                if (cnt[s] > 1) { print "DUPLICATE (" cnt[s] "x): " s " at lines" line[s]; bad++ }
+              print "duplicate config symbols: " bad + 0
+              exit (bad > 0)
+            }
+          ' "$DEFCONFIG"
+
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- "$DEFCONFIG"
 
@@ -136,6 +156,10 @@ jobs:
           require_config 'CONFIG_QUOTA=y'
           require_config 'CONFIG_SCHED_WALT=y'
           require_config 'CONFIG_MEMCG=y'
+          # These were silently disabled by a duplicate trailing "is not set".
+          require_config 'CONFIG_EXT4_ENCRYPTION=y'
+          require_config 'CONFIG_FS_ENCRYPTION=y'
+          require_config 'CONFIG_NETFILTER_XT_TARGET_TRACE=y'
           # MGLRU: the code is in mm/, so it must actually be compiled in.
           # A previous pass dropped these lines (feature silently missing).
           require_config 'CONFIG_LRU_GEN=y'

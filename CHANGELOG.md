@@ -3,6 +3,13 @@
 Full feature documentation lives in RELEASE_NOTES.md (repo). This file is
 what gets attached to each release: only what changed in that build.
 
+## #102 — fix config symbols that a duplicate line was silently disabling
+• Two defconfig entries appeared twice — once as `=y`, then again later as `# ... is not set`. kconfig applies lines in order and the **last one wins**, so both were actually OFF: `CONFIG_NETFILTER_XT_TARGET_TRACE` (so `iptables -j TRACE` was missing despite the release notes claiming A15 parity) and `CONFIG_EXT4_ENCRYPTION`
+• EXT4_ENCRYPTION turned out harmless — it is deprecated and only exists to select FS_ENCRYPTION, which was set directly, so ext4 FBE always worked. The TRACE target was genuinely absent and is now really enabled
+• Also enabled BPF LSM / stream parser / SELinux bootparam in their proper alphabetical slots instead of appending them at the end of the file (same duplicate trap, this time caught by my own review before it shipped)
+• CI now runs a duplicate-symbol check on the defconfig and refuses to build if any symbol appears more than once — this class of bug (a silent "is not set" defeating an intended "=y") has now bitten three times, so it is enforced from here on
+• CI also hard-requires the two symbols above, so their state is verified against the generated .config instead of assumed
+
 ## #101 — Android 17 compatibility pass: eBPF LSM + stream parser enabled
 • Audited what A16/A17 actually demand from a non-GKI 4.14 kernel: the practical gate is the newer eBPF feature set (Google supports 5.10+; LineageOS requires "1:1 eBPF backports, feature equivalent to Linux 5.4")
 • This tree already carries the full ACK eBPF backport (ring buffer, in-kernel BTF, iterators, trampolines, local storage, struct_ops) — a superset of 5.4. Two pieces were in the tree but switched off and are now compiled in: BPF LSM (CONFIG_LSM already listed `bpf`, so that entry was dead) and the BPF stream parser (sockmap/sk_msg)
