@@ -3,6 +3,10 @@
 Full feature documentation lives in RELEASE_NOTES.md (repo). This file is
 what gets attached to each release: only what changed in that build.
 
+## #93 — manager bumped to v3.3.0-54
+• Shipped manager APK updated from v3.3.0-52 to v3.3.0-54 (versionCode 32655)
+• Same both-managers recognition + backslashxx priority as #92
+
 ## #92 — both managers recognized, official priority
 • Backslashxx KSU manager now always recognized even if KernelSU-Next is also installed
 • Both managers stay compatible solo; when both are present, backslashxx manager wins
