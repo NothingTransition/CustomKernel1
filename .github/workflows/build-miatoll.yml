@@ -262,9 +262,9 @@ jobs:
           set -euo pipefail
           # gh release download (authenticated) avoids anonymous rate limits
           # and follows asset redirects; exact tags pinned for reproducibility.
-          gh release download v3.3.0-54 -R backslashxx/KernelSU \
-            -p 'KernelSU_v3.3.0-54_*-release.apk' -D release-assets
-          mv release-assets/KernelSU_v3.3.0-54_*-release.apk \
+          gh release download v3.3.0-55 -R backslashxx/KernelSU \
+            -p 'KernelSU_v3.3.0-55_*-release.apk' -D release-assets
+          mv release-assets/KernelSU_v3.3.0-55_*-release.apk \
              release-assets/KernelSU-manager.apk
           # second manager option: KernelSU-Next (kernel trusts its signature)
           gh release download v3.4.0 -R KernelSU-Next/KernelSU-Next \
