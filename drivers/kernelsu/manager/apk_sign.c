@@ -347,7 +347,20 @@ bool is_manager_apk(char *path)
 	}
 #endif
 
-	// KernelSU official (backslashxx default / shipped manager)
+	/* backslashxx RELEASE manager: releases are signed with the repo's
+	 * public dummy.keystore (build-manager.yml), so the real shipping cert
+	 * is 0x363/4359c171... -- locked to me.weishu.kernelsu pkgname
+	 * (upstream design, TheSillyOk/33a2a0ed4). Removed in the v83 whitelist
+	 * trim by mistake; without it the shipped manager never verifies. */
+	char buf[KSU_MAX_PACKAGE_NAME];
+	char p[] = "me.weishu.kernelsu";
+	if (check_v2_signature(path, 0x363, "4359c171f32543394cbc23ef908c4bb94cad7c8087002ba164c8230948c21549") &&
+	    !get_pkg_from_apk_path(buf, path) && !strcmp(buf, p)) {
+		ksu_manager_kind = 1;
+		return true;
+	}
+
+	// KernelSU official cert (c371061b: custom/self-built backslashxx managers)
 	if (check_v2_signature(path, EXPECTED_SIZE, EXPECTED_HASH)) {
 		ksu_manager_kind = 1;
 		return true;

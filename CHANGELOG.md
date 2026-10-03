@@ -3,6 +3,11 @@
 Full feature documentation lives in RELEASE_NOTES.md (repo). This file is
 what gets attached to each release: only what changed in that build.
 
+## #94 — fix shipped manager recognition (release-signature entry restored)
+• Kernel now verifies the backslashxx manager's real release signature (dummy.keystore cert 4359c171, locked to me.weishu.kernelsu) — this entry was accidentally dropped in the #83 whitelist trim and is why the manager showed "Unsupported"
+• Official-priority crowning (#92) now actually sees the shipped manager; KSUN stays recognized, backslashxx wins when both installed
+• Manager APK: backslashxx v3.3.0-54 (versionCode 32655)
+
 ## #93 — manager bumped to v3.3.0-54
 • Shipped manager APK updated from v3.3.0-52 to v3.3.0-54 (versionCode 32655)
 • Same both-managers recognition + backslashxx priority as #92
