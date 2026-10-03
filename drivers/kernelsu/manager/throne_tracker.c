@@ -145,6 +145,15 @@ static noinline void search_manager(const char *path, int depth, struct list_hea
 	INIT_LIST_HEAD(&data_path_list);
 	unsigned long data_app_magic = 0;
 
+	/*
+	 * Stormbreaker: both trusted managers (official/backslashxx and
+	 * KernelSU-Next) may be installed. Don't crown the first one the
+	 * directory walk happens to hit -- remember each match and let the
+	 * official manager win when both are present.
+	 */
+	char *official_apk = NULL;
+	char *next_apk = NULL;
+
 	char *memory __offstack(sizeof(struct data_path) + DATA_PATH_LEN);
 
 	// First depth
@@ -212,8 +221,15 @@ static noinline void search_manager(const char *path, int depth, struct list_hea
 			if (likely(!is_manager))
 				goto skip_iterate;
 
-			crown_manager(candidate_path, uid_data);
-			stop = 1;
+			/* remember the match; keep scanning for a higher-priority one */
+			if (ksu_manager_kind == 1 && !official_apk)
+				official_apk = kstrdup(candidate_path, GFP_KERNEL);
+			else if (ksu_manager_kind == 2 && !next_apk)
+				next_apk = kstrdup(candidate_path, GFP_KERNEL);
+
+			/* official (backslashxx) manager wins outright; stop scanning */
+			if (official_apk)
+				stop = 1;
 
 skip_iterate:
 			list_del(&pos->list);
@@ -222,6 +238,15 @@ skip_iterate:
 		}
 	}
 
+	/* priority: official/backslashxx manager first, KernelSU-Next second */
+	if (official_apk || next_apk) {
+		char *winner = official_apk ? official_apk : next_apk;
+
+		pr_info("crowning manager, official-priority: %d\n", official_apk != NULL);
+		crown_manager(winner, uid_data);
+	}
+	kfree(official_apk);
+	kfree(next_apk);
 }
 
 static bool is_uid_exist(uid_t uid, char *package, void *data)

@@ -3,6 +3,10 @@
 Full feature documentation lives in RELEASE_NOTES.md (repo). This file is
 what gets attached to each release: only what changed in that build.
 
+## #92 — both managers recognized, official priority
+• Backslashxx KSU manager now always recognized even if KernelSU-Next is also installed
+• Both managers stay compatible solo; when both are present, backslashxx manager wins
+
 ## #91 — smoothness pass
 • Touch input-boost enabled by default (1.8GHz, kernel-side, ROM-independent)
 • Timer tick 100Hz → 300Hz for finer UI scheduling
