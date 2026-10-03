@@ -3,6 +3,13 @@
 Full feature documentation lives in RELEASE_NOTES.md (repo). This file is
 what gets attached to each release: only what changed in that build.
 
+## #101 — Android 17 compatibility pass: eBPF LSM + stream parser enabled
+• Audited what A16/A17 actually demand from a non-GKI 4.14 kernel: the practical gate is the newer eBPF feature set (Google supports 5.10+; LineageOS requires "1:1 eBPF backports, feature equivalent to Linux 5.4")
+• This tree already carries the full ACK eBPF backport (ring buffer, in-kernel BTF, iterators, trampolines, local storage, struct_ops) — a superset of 5.4. Two pieces were in the tree but switched off and are now compiled in: BPF LSM (CONFIG_LSM already listed `bpf`, so that entry was dead) and the BPF stream parser (sockmap/sk_msg)
+• SELinux bootparam re-enabled so `androidboot.selinux=permissive/disabled` works for ROM bring-up — AOSP's own kernels ship it on
+• CI now hard-requires the Android-userspace critical config set (eBPF, PSI, binder devices, FBE/verity, quotas, incremental FS, WALT, namespaces, seccomp) and verifies bpf_lsm_init is linked in, so A17 compatibility can't silently regress
+• RELEASE_NOTES documents the whole A17 picture, including the honest gaps: uclamp is absent from this tree entirely (ROMs use Qualcomm WALT/SCHED_TUNE instead), DEBUG_INFO_BTF is off (opt-in), 16 KB pages don't apply to this SoC
+
 ## #100 — document MGLRU, and prove the memory tuning ships
 • Added Documentation/vm/multigen_lru.rst — the MGLRU backport had no documentation at all, even though the kernel config help points at that file (so the pointer was dangling). Covers what it is, the config options, the runtime toggle, the `spread` knob and how it interacts with the rest of the VM
 • CI now checks that the RAM-tier tuning initcall (`ram_tune_init`) is actually linked into the kernel image, the same way MGLRU and KernelSU already were — so the #99 tuning can't silently disappear from a future build

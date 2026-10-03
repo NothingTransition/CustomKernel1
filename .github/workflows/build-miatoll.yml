@@ -116,6 +116,26 @@ jobs:
           require_config 'CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y'
           require_config 'CONFIG_KSU_SUSFS_OPEN_REDIRECT=y'
           require_config 'CONFIG_NOMOUNT=y'
+          # Android 17 / AOSP userspace parity: the gate for Android 16+ on
+          # non-GKI 4.14 is the newer eBPF feature set. These must stay on.
+          require_config 'CONFIG_BPF_LSM=y'
+          require_config 'CONFIG_BPF_STREAM_PARSER=y'
+          require_config 'CONFIG_BPF_JIT_ALWAYS_ON=y'
+          require_config 'CONFIG_BPF_UNPRIV_DEFAULT_OFF=y'
+          require_config 'CONFIG_PSI=y'
+          require_config '# CONFIG_PSI_DEFAULT_DISABLED is not set'
+          require_config 'CONFIG_ANDROID_BINDER_DEVICES="binder,hwbinder,vndbinder"'
+          require_config 'CONFIG_SECURITY_SELINUX_BOOTPARAM=y'
+          require_config 'CONFIG_SECURITY_SELINUX_DEVELOP=y'
+          require_config 'CONFIG_USER_NS=y'
+          require_config 'CONFIG_SECCOMP_FILTER=y'
+          require_config 'CONFIG_DM_VERITY=y'
+          require_config 'CONFIG_DM_DEFAULT_KEY=y'
+          require_config 'CONFIG_FS_VERITY=y'
+          require_config 'CONFIG_INCREMENTAL_FS=y'
+          require_config 'CONFIG_QUOTA=y'
+          require_config 'CONFIG_SCHED_WALT=y'
+          require_config 'CONFIG_MEMCG=y'
           # MGLRU: the code is in mm/, so it must actually be compiled in.
           # A previous pass dropped these lines (feature silently missing).
           require_config 'CONFIG_LRU_GEN=y'
@@ -213,6 +233,9 @@ jobs:
 
           # the RAM-tier tuning initcall must actually be in the image
           grep -q ' ram_tune_init$' vmlinux.sym
+
+          # BPF LSM must be registered, not just configured on
+          grep -q ' bpf_lsm_init$' vmlinux.sym
 
           make -s O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- kernelrelease | tee kernel.release

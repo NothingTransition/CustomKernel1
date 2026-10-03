@@ -5959,3 +5959,14 @@ CONFIG_KALLSYMS_ALL=y
 CONFIG_SCHEDSTATS=y
 CONFIG_SCHED_DEBUG=y
 CONFIG_EROFS_FS_PCPU_KTHREAD_HIPRI=y
+
+# Android 17 eBPF parity: the full ACK eBPF backport is in this tree
+# (ringbuf, BTF, iterators, trampolines, local storage, struct_ops), but
+# BPF LSM and the stream parser were left disabled, and CONFIG_LSM already
+# listed "bpf" (a dead entry). Android 16+ leans on the newer eBPF feature
+# set, so compile these in.
+CONFIG_BPF_LSM=y
+CONFIG_BPF_STREAM_PARSER=y
+# Let androidboot.selinux=permissive/disabled work (ROM bring-up and dev);
+# AOSP's own kernels ship this enabled.
+CONFIG_SECURITY_SELINUX_BOOTPARAM=y
