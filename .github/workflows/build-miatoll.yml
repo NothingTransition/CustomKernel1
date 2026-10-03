@@ -94,6 +94,13 @@ jobs:
           # order and the LAST one wins, so a stale trailing "is not set"
           # silently defeats an earlier "=y" (this already happened twice:
           # ZSMALLOC_STAT, and EXT4_ENCRYPTION/NETFILTER_XT_TARGET_TRACE).
+          #
+          # $DEFCONFIG is a kconfig *target* name ("vendor/xiaomi/..."); make
+          # resolves it under arch/$ARCH/configs/, so spell that out here -
+          # reading the bare name as a path is what broke build #102.
+          DEFCONFIG_PATH="arch/$ARCH/configs/$DEFCONFIG"
+          test -f "$DEFCONFIG_PATH"
+
           awk '
             /^CONFIG_[A-Za-z0-9_]+=/ || /^# CONFIG_[A-Za-z0-9_]+ is not set/ {
               n = $0
@@ -107,7 +114,7 @@ jobs:
               print "duplicate config symbols: " bad + 0
               exit (bad > 0)
             }
-          ' "$DEFCONFIG"
+          ' "$DEFCONFIG_PATH"
 
           make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- "$DEFCONFIG"
