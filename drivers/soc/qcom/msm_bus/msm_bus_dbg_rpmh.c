@@ -29,6 +29,13 @@
 #include "msm_bus_core.h"
 #include "msm_bus_rpmh.h"
 
+/*
+ * This is the only translation unit that emits trace_bus_*() calls, so it
+ * has to be the one that instantiates the tracepoints. Without this, linking
+ * fails with "undefined symbol: __tracepoint_bus_update_request" whenever
+ * this file gets built (it is gated on CONFIG_DEBUG_FS).
+ */
+#define CREATE_TRACE_POINTS
 #include <trace/events/trace_msm_bus.h>
 
 #define MAX_BUFF_SIZE 4096

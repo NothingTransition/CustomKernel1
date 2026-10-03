@@ -3,9 +3,10 @@
 Full feature documentation lives in RELEASE_NOTES.md (repo). This file is
 what gets attached to each release: only what changed in that build.
 
-## #97 — MGLRU restored (compiled into the kernel for real)
+## #97 — MGLRU restored (+ the build fix that was hiding behind it)
 • Multigenerational LRU is back in the build — the port was sitting in mm/ all along, but the defconfig lines had been dropped as "dead", so MGLRU had silently disappeared from recent kernels
-• CI now hard-requires the MGLRU options and verifies the symbols are linked into the kernel image, so it can't go missing silently again
+• Fixed a link failure from the previous memory pass: turning on ZSMALLOC_STAT force-selects DEBUG_FS (it is a debugfs feature), which pulled in a debugfs-only msm_bus file whose tracepoints were never instantiated — `undefined symbol: __tracepoint_bus_update_request`. ZSMALLOC_STAT is off again (kernel stays a non-debugfs build) and the missing tracepoint instantiation is fixed at the source
+• CI now hard-requires the MGLRU options and verifies the lru_gen_* symbols are linked into the kernel image, so MGLRU can't go missing silently again
 • Still OFF by default (there is an old idle-charging hang report with it enabled): switch on with `su -c "echo 1 > /sys/kernel/mm/lru_gen/enabled"`, check with `su -c "cat /sys/kernel/mm/lru_gen/enabled"` — resets to off on reboot
 
 ## #96 — memory management pass
