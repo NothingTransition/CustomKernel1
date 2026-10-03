@@ -3,6 +3,12 @@
 Full feature documentation lives in RELEASE_NOTES.md (repo). This file is
 what gets attached to each release: only what changed in that build.
 
+## #96 — memory management pass
+• zram default compression upgraded from lzo to lz4 — faster decompress AND better ratio (biggest win on 4GB devices)
+• zstd now compiled in for zram — switch live via `echo zstd > /sys/block/zram0/comp_algorithm` (better compression, more CPU)
+• zram stats enabled (root can inspect compression efficiency via zsmalloc debug)
+• Removed dead MGLRU config lines — the code was never in this kernel, the defconfig entry was a silent no-op
+
 ## #95 — manager bumped to v3.3.0-55
 • Shipped manager APK updated from v3.3.0-54 to v3.3.0-55 (versionCode 32656)
 • Includes the #94 release-signature fix (dummy.keystore cert, pkg-locked) — manager recognition now works
