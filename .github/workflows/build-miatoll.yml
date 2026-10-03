@@ -211,6 +211,9 @@ jobs:
           grep -q ' lru_gen_init_mm$' vmlinux.sym
           grep -q ' lru_gen_eviction$' vmlinux.sym
 
+          # the RAM-tier tuning initcall must actually be in the image
+          grep -q ' ram_tune_init$' vmlinux.sym
+
           make -s O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- kernelrelease | tee kernel.release
           sha256sum \

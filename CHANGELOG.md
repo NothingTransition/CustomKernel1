@@ -3,6 +3,11 @@
 Full feature documentation lives in RELEASE_NOTES.md (repo). This file is
 what gets attached to each release: only what changed in that build.
 
+## #100 — document MGLRU, and prove the memory tuning ships
+• Added Documentation/vm/multigen_lru.rst — the MGLRU backport had no documentation at all, even though the kernel config help points at that file (so the pointer was dangling). Covers what it is, the config options, the runtime toggle, the `spread` knob and how it interacts with the rest of the VM
+• CI now checks that the RAM-tier tuning initcall (`ram_tune_init`) is actually linked into the kernel image, the same way MGLRU and KernelSU already were — so the #99 tuning can't silently disappear from a future build
+• No functional kernel change in this build
+
 ## #99 — memory tuned to the installed RAM (4/6/8 GB)
 • The kernel now measures installed RAM at boot and applies the matching memory profile — one zip, three tiers, so a 4 GB phone and an 8 GB phone stop sharing one compromise
 • kswapd reserve (the anti-stutter knob) raised: ~40 MB on every tier instead of ~7 MB on 4 GB — allocations now drain in the background instead of falling into direct reclaim
