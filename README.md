@@ -57,6 +57,7 @@ Flash the release zip in recovery, reboot, install the manager APK. Done.
 | Stable | `stormbreaker-v<N>` | One release per CI run, tagged with the run number; the zip inside is `Stormbreaker-miatoll-KSU-SUSFS-NoMount-<N>.zip`. The newest is badged **Latest**; every release carries the same companions (both manager APKs, BRENE, NoMount). |
 | Diagnostic | `diag-<N>` (**pre-release**) | Experimental bisect/test kernels (see `diag/README.md`). Never for daily use. |
 | Known-good | `stormbreaker-v108` | The v105 tree. If a newer build misbehaves on a strict ROM, flash this. |
+| Restored | `stormbreaker-v93` | Historical. Byte-identical zip from CI run #93, recovered from that run's artifact after the #110 cleanup pruned it (`restore-release.yml`). Not for daily use. |
 
 Boot status on **Infinity X 4.0 (A17)**: `v108` is the one to flash — the newer
 builds (`v109` and the `v110` housekeeping rebuild) are blocked there, because
@@ -72,6 +73,7 @@ Builds run in GitHub Actions on Ubuntu 24.04 with the distro LLVM toolchain — 
 - **Trigger:** a push to a trigger branch (`arena/01a0bfbb-customkernel1`, `arena/01a1039d-customkernel1`) touching the paths the workflow watches, or a manual run (`workflow_dispatch`).
 - **Pipeline:** resolve `vendor/xiaomi/miatoll_defconfig` → hard-require the security/feature config set → compile kernel + DTB + DTBO (`LLVM=1`, `LLVM_IAS=1`) → verify KernelSU/SUSFS/NoMount and the required symbols are linked → package the AnyKernel3 zip → publish the numbered release with the manager APKs and companion modules.
 - **Diagnostics:** experimental bisect kernels live in `diag/` and build on manual dispatch only — see `diag/README.md`.
+- **Restore:** `.github/workflows/restore-release.yml` re-attaches a pruned release's original zip from the CI artifact of the run that built it (used once to bring back `v93`); it never rebuilds.
 
 CI enforces: no duplicate defconfig symbols, the required config set must be present in the *resolved* `.config`, and features that are supposed to be gone (MGLRU since #109, the Droidspaces fragment, kprobes) stay gone.
 
