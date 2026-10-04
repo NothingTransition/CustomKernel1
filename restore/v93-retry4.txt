@@ -1,0 +1,4 @@
+v93 retry 4
+fix: two jobs — fetch (contents:read + actions:read) and publish (contents:write
+     ONLY, mirroring the main release job that publishes fine in this repo).
+date: 2026-10-04

@@ -9,6 +9,12 @@ name: Stormbreaker — restore a pruned release from CI artifacts
 # releases cleanup): run #93 = 37125698258, artifact miatoll-kernel-93,
 # commit d62bca985.
 #
+# Two jobs on purpose: fetching the old artifact needs the `actions` scope,
+# and in this repo a job that mixes `actions: read` with `contents: write`
+# gets a read-only token (release creation then fails 403). The publish job
+# therefore asks for `contents: write` alone - the same scope set the main
+# release job uses, which publishes fine here.
+#
 # Trigger: push touching this file or restore/**, or manual dispatch.
 
 on:
@@ -25,21 +31,40 @@ permissions:
   contents: read
 
 jobs:
-  restore:
-    name: Restore stormbreaker-v93 from its artifact
+  fetch:
+    name: Fetch the original #93 artifact
     runs-on: ubuntu-24.04
-    # Same scope placement as the main release job (which creates releases
-    # successfully in this repo): job-level contents:write, not workflow-level.
     permissions:
-      contents: write
+      contents: read
       actions: read
     steps:
-      - name: Download the original #93 artifact
+      - name: Download the artifact from run 37125698258
         uses: actions/download-artifact@v4
         with:
           name: miatoll-kernel-93
           run-id: 37125698258
           github-token: ${{ github.token }}
+          path: a93
+
+      - name: Hand it to the publish job
+        uses: actions/upload-artifact@v4
+        with:
+          name: v93-zip
+          path: a93
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: Recreate stormbreaker-v93
+    needs: fetch
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download the zip from this run
+        uses: actions/download-artifact@v4
+        with:
+          name: v93-zip
           path: a93
 
       - name: Locate the flashable zip
@@ -71,48 +96,40 @@ jobs:
           echo "notes ready:"
           cat notes.md
 
-      - name: Create the release and upload the zip (REST API)
+      - name: Recreate the release
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -uo pipefail
-          # Any failure is re-emitted as an ::error:: annotation so it is
-          # readable from the API (job logs are not reachable from the dev
-          # sandbox).
-          fail() { printf '%s\n' "$1" | tail -25 | while IFS= read -r l; do echo "::error::$l"; done; exit 1; }
+          # Failures and probes are emitted as annotations so they are readable
+          # through the API (this sandbox cannot fetch job logs).
+          ann() { printf '%s\n' "$1" | tail -25 | while IFS= read -r l; do echo "::error::$l"; done; }
+          probe() { printf '%s\n' "$1" | while IFS= read -r l; do echo "::warning::PROBE $l"; done; }
 
           TAG=stormbreaker-v93
-          echo "== token diagnostics =="
-          gh auth status 2>&1 | sed "s/gho_[A-Za-z0-9_]*/***/g" | head -6 || true
-          gh api "repos/$GITHUB_REPOSITORY" --jq '.permissions // "no permissions field"' 2>&1 | head -3 || true
-          echo "== clearing any existing release/tag =="
-          GH_REPO="$GITHUB_REPOSITORY" gh release view "$TAG" >/dev/null 2>&1 && \
-            { GH_REPO="$GITHUB_REPOSITORY" gh release delete "$TAG" --yes --cleanup-tag || fail "delete failed"; } || echo "no existing release"
+          REPO="$GITHUB_REPOSITORY"
+          probe "auth: $(gh auth status 2>&1 | tr '\n' '|' | sed 's/gh[opsu]_[A-Za-z0-9_]*/***/g')"
+          probe "repo permissions: $(gh api "repos/$REPO" --jq -c '.permissions' 2>&1)"
 
-          echo "== creating the release =="
-          if ! out=$(gh api -X POST "repos/$GITHUB_REPOSITORY/releases" \
-                -f tag_name="$TAG" \
-                -f target_commitish=d62bca985c13de0a6041b9d81d817cadfb3fed55 \
-                -f name="Stormbreaker v93 — restored original build" \
-                -F draft=false -F prerelease=false -f make_latest=false \
-                -f body="$(cat notes.md)" 2>&1); then
-            fail "gh api releases create: $out"
+          if gh release view "$TAG" -R "$REPO" >/dev/null 2>&1; then
+            gh release delete "$TAG" -R "$REPO" --yes --cleanup-tag \
+              || { ann "existing release could not be deleted"; exit 1; }
           fi
-          rid=$(printf '%s' "$out" | python3 -c 'import sys,json;print(json.load(sys.stdin)["id"])') \
-            || fail "could not read release id from: $out"
-          echo "release id: $rid"
 
-          echo "== uploading the zip =="
-          if ! up=$(gh api -X POST \
-                -H "Content-Type: application/zip" \
-                --input Stormbreaker-miatoll-KSU-SUSFS-NoMount-93.zip \
-                "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$rid/assets?name=Stormbreaker-miatoll-KSU-SUSFS-NoMount-93.zip" 2>&1); then
-            fail "asset upload failed: $up"
+          if ! out=$(gh release create "$TAG" -R "$REPO" \
+                --target d62bca985c13de0a6041b9d81d817cadfb3fed55 \
+                --title "Stormbreaker v93 — restored original build" \
+                --notes-file notes.md \
+                Stormbreaker-miatoll-KSU-SUSFS-NoMount-93.zip 2>&1); then
+            ann "gh release create failed: $out"
+            exit 1
           fi
-          printf '%s' "$up" | python3 -c 'import sys,json;d=json.load(sys.stdin);print("uploaded:",d["name"],d["size"],"bytes")' \
-            || echo "uploaded (raw): $up"
+          echo "$out"
 
-          echo "== verify =="
-          GH_REPO="$GITHUB_REPOSITORY" gh release view "$TAG" --json url,assets \
+          # Keep the Latest badge on the newest build.
+          gh release edit "$TAG" -R "$REPO" --latest=false \
+            || probe "could not demote Latest - check the badge manually"
+
+          gh release view "$TAG" -R "$REPO" --json url,assets \
             --jq '.url, (.assets[] | "  \(.name) \(.size) bytes")'
