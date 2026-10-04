@@ -41,9 +41,24 @@ build, but that ROM currently only lets the Imperial-X kernel boot it — the
 bisect for that is parked (see `diag/README.md`). The stack is field-tested
 working on Evolution X A17.
 
+## Build
+
+Builds run in GitHub Actions on Ubuntu 24.04 with the distro LLVM toolchain — no local cross-compiler needed:
+
+- **Workflow:** `.github/workflows/build-miatoll.yml` — build → verify → package → release.
+- **Trigger:** a push to a trigger branch (`arena/01a0bfbb-customkernel1`, `arena/01a1039d-customkernel1`) touching the paths the workflow watches, or a manual run (`workflow_dispatch`).
+- **Pipeline:** resolve `vendor/xiaomi/miatoll_defconfig` → hard-require the security/feature config set → compile kernel + DTB + DTBO (`LLVM=1`, `LLVM_IAS=1`) → verify KernelSU/SUSFS/NoMount and the required symbols are linked → package the AnyKernel3 zip → publish the numbered release with the manager APKs and companion modules.
+- **Diagnostics:** experimental bisect kernels live in `diag/` and build on manual dispatch only — see `diag/README.md`.
+
+CI enforces: no duplicate defconfig symbols, the required config set must be present in the *resolved* `.config`, and features that are supposed to be gone (MGLRU since #109, the Droidspaces fragment, kprobes) stay gone.
+
 ## Credits
 
 CAF/OpenELA · backslashxx (KernelSU) · simonpunk/sidex15 (SUSFS) · maxsteeel (NoMount) · osm0sis (AnyKernel3) · Google (MGLRU)
+
+## License
+
+GPL-2.0 — see `COPYING`. KernelSU, SUSFS, NoMount and AnyKernel3 keep their own licenses; see `CREDITS`.
 
 ---
 

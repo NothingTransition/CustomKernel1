@@ -1,4 +1,4 @@
-name: Build Miatoll Kernel
+name: Stormbreaker — build & release (miatoll)
 
 on:
   workflow_dispatch:
@@ -406,7 +406,9 @@ jobs:
         run: |
           set -euo pipefail
           # One release per build, numbered to match the zip (run number).
-          # Old releases are never deleted — full history stays downloadable.
+          # Superseded iteration builds are pruned by hand so the releases page
+          # stays readable; the latest stable, the known-good fallback and the
+          # diagnostics pre-release are always kept (README -> "Releases & tags").
           TAG="stormbreaker-v${GITHUB_RUN_NUMBER}"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release delete "$TAG" --yes --cleanup-tag

@@ -3,6 +3,12 @@
 Full feature documentation lives in RELEASE_NOTES.md (repo). This file is
 what gets attached to each release: only what changed in that build.
 
+## #110 — repo housekeeping rebuild (no kernel change)
+• Nothing in the kernel changed — this is the #109 tree rebuilt to prove the pipeline still runs green after the cleanup, so the release metadata here can be trusted. Kernel zip is equivalent to #109
+• Releases page pruned from 21 releases (818 MB) to the ones that matter: this build (latest), #109, **v108 (known-good — the v105 tree, boots Infinity X 4.0)** and the `diag-1` pre-release (parked boot-stall bisect). Superseded iteration builds v78–v107 are gone
+• README now documents the release streams (stable / diagnostic / known-good), the build pipeline and the license; the diagnostics workflow is manual-only while the bisect is parked (see `diag/README.md`)
+• Boot status unchanged: **on Infinity X 4.0 flash v108** — that ROM currently only boots the Imperial-X kernel. The stack is field-tested working on Evolution X A17
+
 ## #109 — stall/jitter pass: reserve moved to a knob the ROM cannot erase, CFQ default, MGLRU + Droidspaces out
 • **The stutter fix is now in the one knob the ROM does not overwrite.** The ROM's own `init.qcom.post_boot-atoll.sh` sets `vm.watermark_scale_factor=1` ("we are using efk") and runs **twice** — from `on init` and again when `sys.boot_completed=1` re-triggers it — so every reserve this kernel set as a scale factor was erased after boot. The Qualcomm knob that script assumes is in play, `vm.extra_free_kbytes`, is never written by any ROM script, so the RAM-tier reserve now lives there: **~38 MB (4 GB) / ~42 MB (6 GB) / ~40 MB (8 GB)**, added to the LOW/HIGH watermarks so kswapd keeps the headroom and allocation bursts stop falling into *direct* reclaim. `watermark_scale_factor` is set to 1 to match the ROM, so the two stop fighting over one value. Both remain ordinary sysctls
 • Same ~40 MB anti-direct-reclaim target as before — only the delivery mechanism changed, because the old one was being wiped twice per boot

@@ -1,4 +1,4 @@
-name: Miatoll DIAG builds (not releases)
+name: Stormbreaker — diagnostics (manual, pre-release only)
 
 # Diagnostic kernels for the intermittent boot stall on Infinity X 4.0 (4 GB)
 # reported against both v108 and v109. Deliberately separate from
