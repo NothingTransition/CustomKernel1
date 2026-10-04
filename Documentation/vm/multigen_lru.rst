@@ -2,6 +2,14 @@
 Multigenerational LRU (MGLRU)
 ============================
 
+.. note::
+
+   As of build #109, MGLRU is compiled out of Stormbreaker builds
+   (``CONFIG_LRU_GEN`` is not set): it had always been inert at runtime
+   (``LRU_GEN_ENABLED`` was off) and an old field report had a hang with it
+   enabled. The source is still in the tree, so this document is kept for the
+   next attempt at enabling it.
+
 Background
 ==========
 

@@ -157,7 +157,6 @@ jobs:
           require_config 'CONFIG_ANDROID_BINDER_DEVICES="binder,hwbinder,vndbinder"'
           require_config 'CONFIG_SECURITY_SELINUX_BOOTPARAM=y'
           require_config 'CONFIG_SECURITY_SELINUX_DEVELOP=y'
-          require_config 'CONFIG_USER_NS=y'
           require_config 'CONFIG_SECCOMP_FILTER=y'
           require_config 'CONFIG_DM_VERITY=y'
           require_config 'CONFIG_DM_DEFAULT_KEY=y'
@@ -178,12 +177,27 @@ jobs:
           require_config 'CONFIG_NET_SCH_DEFAULT=y'
           require_config 'CONFIG_DEFAULT_FQ_CODEL=y'
           require_config 'CONFIG_NET_SCH_FQ_CODEL=y'
-          # MGLRU: the code is in mm/, so it must actually be compiled in.
-          # A previous pass dropped these lines (feature silently missing).
-          require_config 'CONFIG_LRU_GEN=y'
-          require_config '# CONFIG_LRU_GEN_ENABLED is not set'
-          require_config 'CONFIG_NR_LRU_GENS=7'
-          require_config 'CONFIG_TIERS_PER_GEN=4'
+          # #109: MGLRU is compiled out. It was only ever inert (the runtime
+          # static key was off, so the ~2.8k-line backport never ran); the code
+          # stays in mm/ for a future retry, the config stays off.
+          require_config '# CONFIG_LRU_GEN is not set'
+          # #109: the Droidspaces container fragment is out. Imperial-X boots
+          # this same ROM with every one of these off, which is the field
+          # evidence that Android does not need them.
+          require_config '# CONFIG_SYSVIPC is not set'
+          require_config '# CONFIG_POSIX_MQUEUE is not set'
+          require_config '# CONFIG_PID_NS is not set'
+          require_config '# CONFIG_USER_NS is not set'
+          require_config '# CONFIG_CGROUP_DEVICE is not set'
+          require_config '# CONFIG_CGROUP_PIDS is not set'
+          require_config '# CONFIG_CGROUP_NET_PRIO is not set'
+          require_config '# CONFIG_BRIDGE_NETFILTER is not set'
+          require_config '# CONFIG_NF_TABLES is not set'
+          require_config '# CONFIG_NETFILTER_XT_MATCH_ADDRTYPE is not set'
+          # #109: CFQ is the I/O scheduler default again. The ROM tunes
+          # CFQ-family blkio knobs (blkio.group_idle) that BFQ does not expose;
+          # BFQ stays compiled in and selectable per disk.
+          require_config 'CONFIG_DEFAULT_IOSCHED="cfq"'
           require_config '# CONFIG_KPROBES is not set'
           require_config 'CONFIG_EROFS_FS=y'
           require_config 'CONFIG_EROFS_FS_ZIP=y'
@@ -267,11 +281,16 @@ jobs:
           grep -q ' susfs_add_sus_map$' vmlinux.sym
           grep -q ' nomount_init$' vmlinux.sym
 
-          # MGLRU must be linked in, not just configured on.
-          grep -q ' lru_gen_set_state$' vmlinux.sym
-          grep -q ' lru_gen_init_lruvec$' vmlinux.sym
-          grep -q ' lru_gen_init_mm$' vmlinux.sym
-          grep -q ' lru_gen_eviction$' vmlinux.sym
+          # #109: MGLRU must NOT be linked in any more, nor the SYSVIPC /
+          # user-namespace code the Droidspaces fragment pulled in. The config
+          # assertions above are the real gate; this proves the linked image
+          # agrees with them.
+          ! grep -q ' lru_gen_set_state$' vmlinux.sym
+          ! grep -q ' lru_gen_init_lruvec$' vmlinux.sym
+          ! grep -q ' lru_gen_init_mm$' vmlinux.sym
+          ! grep -q ' lru_gen_eviction$' vmlinux.sym
+          ! grep -q ' sys_semget$' vmlinux.sym
+          ! grep -q ' create_user_ns$' vmlinux.sym
 
           # the RAM-tier tuning initcall must actually be in the image
           grep -q ' ram_tune_init$' vmlinux.sym
@@ -295,7 +314,7 @@ jobs:
             echo "toolchain.source=ubuntu-24.04-llvm"
             clang --version | head -n 1 | sed 's/^/clang.version=/'
             ld.lld --version | head -n 1 | sed 's/^/lld.version=/'
-            grep -E '^(CONFIG_KSU|CONFIG_NOMOUNT|CONFIG_LRU_GEN|CONFIG_NR_LRU_GENS|CONFIG_TIERS_PER_GEN|CONFIG_EROFS_FS|CONFIG_NTFS_FS|CONFIG_BPF_SYSCALL|CONFIG_MODULE_SIG_FORCE)' out/.config || true
+            grep -E '^(CONFIG_KSU|CONFIG_NOMOUNT|CONFIG_LRU_GEN|CONFIG_DEFAULT_IOSCHED|CONFIG_SYSVIPC|CONFIG_USER_NS|CONFIG_NF_TABLES|CONFIG_EROFS_FS|CONFIG_NTFS_FS|CONFIG_BPF_SYSCALL|CONFIG_MODULE_SIG_FORCE)' out/.config || true
           } | tee build-info.txt
 
       - name: Package AnyKernel3 flashable zip

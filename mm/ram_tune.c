@@ -9,12 +9,28 @@
  *
  * So measure the RAM once at boot and apply the tier that fits. This runs as a
  * late_initcall, i.e. after the VM has sized its watermarks (device_initcall)
- * but before userspace starts, so:
- *   - the values below become the effective boot defaults, and
- *   - ROM init scripts / root can still override anything at runtime, because
- *     every knob here is a normal /proc/sys/vm/... sysctl (and the MGLRU one is
- *     /sys/kernel/mm/lru_gen/spread). This tunes defaults, it does not lock
- *     anything down.
+ * but before userspace starts. Every knob here is a normal sysctl afterwards
+ * (/proc/sys/vm/...), so ROM init scripts and root can still override any of
+ * it - this tunes defaults, it does not lock anything down.
+ *
+ * The kswapd reserve is written to extra_free_kbytes rather than to
+ * watermark_scale_factor, and that choice is deliberate:
+ *
+ *   - The ROM's vendor post_boot script (init.qcom.post_boot-atoll.sh) sets
+ *     watermark_scale_factor to 1 with the comment "we are using efk"
+ *     (extra free kbytes) - that is how Qualcomm kernels pair the two knobs.
+ *     The script itself never writes efk, so on this ROM the reserve simply
+ *     does not exist.
+ *   - Worse, it runs twice: once from `on init`, and again when
+ *     sys.boot_completed=1 re-triggers it. Any reserve expressed only in
+ *     watermark_scale_factor is therefore wiped out *after* our late_initcall,
+ *     at a point where no kernel initcall runs again.
+ *   - extra_free_kbytes is added straight into the LOW and HIGH watermarks
+ *     (mm/page_alloc.c) and no ROM init script we have seen touches it.
+ *
+ * So the anti-stall reserve lives in the knob the ROM leaves alone, and
+ * watermark_scale_factor is set to 1 to match the ROM's own write - the two
+ * mechanisms stop fighting over the same value.
  *
  * Note the RAM we see is *usable* RAM, not the marketing number: a "4 GB"
  * miatoll reports roughly 3.5-3.8 GB, a "6 GB" roughly 5.5-5.8 GB. The tier
@@ -33,6 +49,12 @@
 extern int lru_gen_spread;
 #endif
 
+/*
+ * mm/page_alloc.c - Qualcomm's "efk". Declared here because the vendor patch
+ * never added a header prototype (kernel/sysctl.c carries its own extern too).
+ */
+extern int extra_free_kbytes;
+
 struct ram_tier {
 	const char *name;
 	unsigned long max_pages;	/* inclusive ceiling, in pages */
@@ -40,7 +62,7 @@ struct ram_tier {
 	int vfs_cache_pressure;
 	int dirty_ratio;
 	int dirty_background_ratio;
-	int watermark_scale_factor;
+	int extra_free_kbytes;
 	int page_cluster;
 	int lru_gen_spread;
 };
@@ -63,35 +85,39 @@ struct ram_tier {
  * background_ratio     starts earlier and each flush is smaller, which trades a
  *                       little throughput for far fewer multi-hundred-ms stalls
  *                       when reclaim has to wait on a big writeback. 8 GB keeps
- *                       the kernel defaults.
+ *                       the kernel defaults. (The ROM re-writes
+ *                       dirty_background_ratio to 10 at sys.boot_completed; that
+ *                       is its own stock-value choice and is left alone.)
  *
- * watermark_scale_factor
- *                       This is the real anti-jank knob. It sets the gap between
- *                       the min and low watermarks, i.e. how much free memory
+ * extra_free_kbytes     The real anti-jank knob. It is added to the LOW and
+ *                       HIGH watermarks, i.e. it is the amount of free memory
  *                       kswapd keeps in reserve before it starts reclaiming in
- *                       the background. It works out to
- *                       managed_pages * watermark_scale_factor / 10000, so the
- *                       kernel default (20 = 0.2%) leaves only ~7 MB on a 4 GB
- *                       device and ~15 MB on an 8 GB one - not enough to absorb
- *                       an app's allocation burst, so allocations fall through
- *                       to *direct* reclaim and the phone stutters.
- *                       The values below are picked so every tier ends up with
- *                       roughly the same absolute reserve, about 40 MB:
- *                         4 GB:  ~950k pages * 100/10000 = 38 MB
- *                         6 GB: ~1450k pages *  75/10000 = 43 MB
- *                         8 GB: ~1950k pages *  50/10000 = 39 MB
- *                       i.e. a smaller percentage on larger devices, which
- *                       keeps kswapd from working harder than it needs to.
+ *                       the background. The kernel default is 0, and the ROM's
+ *                       watermark_scale_factor=1 buys only the floor of
+ *                       min_free_kbytes/4 (~2 MB on a 4 GB phone) - not enough
+ *                       to absorb an app's allocation burst, so allocations
+ *                       fall through to *direct* reclaim and the phone
+ *                       stutters. The values below are picked so every tier
+ *                       ends up with roughly the same absolute reserve, about
+ *                       40 MB:
+ *                         4 GB:  38000 KB - ~950k pages * 100/10000 would
+ *                                              have been ~38 MB
+ *                         6 GB:  42000 KB - ~43 MB
+ *                         8 GB:  40000 KB - ~39 MB
+ *                       a smaller figure on larger devices keeps kswapd from
+ *                       working harder than it needs to.
  *
  * page_cluster=0        Swap readahead of 2^3 pages (the 4.14 default for our
  *                       RAM size) is a disk optimisation. zram is random access
  *                       with no seek penalty, so readahead there is pure waste.
  *
- * lru_gen_spread        Only matters when MGLRU is enabled. It is the ratio of
- *                       old to young pages that makes the walker skip a round
- *                       of aging. Smaller = age more often = reclaim cold pages
+ * lru_gen_spread        Only used when MGLRU is compiled in (CONFIG_LRU_GEN,
+ *                       not set in the current builds). It is the ratio of old
+ *                       to young pages that makes the walker skip a round of
+ *                       aging. Smaller = age more often = reclaim cold pages
  *                       sooner, which is what a 4 GB device wants; larger = let
- *                       things settle, which suits 8 GB.
+ *                       things settle, which suits 8 GB. Kept so re-enabling
+ *                       MGLRU needs no further tuning.
  */
 static const struct ram_tier ram_tiers[] = {
 	{ /* ~4 GB installed (~3.5-3.8 GB usable) */
@@ -101,7 +127,7 @@ static const struct ram_tier ram_tiers[] = {
 		.vfs_cache_pressure	= 150,
 		.dirty_ratio		= 10,
 		.dirty_background_ratio	= 5,
-		.watermark_scale_factor	= 100,
+		.extra_free_kbytes	= 38000,
 		.page_cluster		= 0,
 		.lru_gen_spread		= 0,
 	},
@@ -112,7 +138,7 @@ static const struct ram_tier ram_tiers[] = {
 		.vfs_cache_pressure	= 125,
 		.dirty_ratio		= 15,
 		.dirty_background_ratio	= 5,
-		.watermark_scale_factor	= 75,
+		.extra_free_kbytes	= 42000,
 		.page_cluster		= 0,
 		.lru_gen_spread		= 1,
 	},
@@ -123,7 +149,7 @@ static const struct ram_tier ram_tiers[] = {
 		.vfs_cache_pressure	= 100,
 		.dirty_ratio		= 20,
 		.dirty_background_ratio	= 10,
-		.watermark_scale_factor	= 50,
+		.extra_free_kbytes	= 40000,
 		.page_cluster		= 0,
 		.lru_gen_spread		= 2,
 	},
@@ -152,27 +178,32 @@ static int __init ram_tune_init(void)
 	vm_dirty_ratio = tier->dirty_ratio;
 	dirty_background_ratio = tier->dirty_background_ratio;
 	page_cluster = tier->page_cluster;
+	extra_free_kbytes = tier->extra_free_kbytes;
 
 	/*
-	 * Watermarks are latched at boot, so the new factor only takes effect
-	 * once we recompute them. Safe here: this is a spinlock around the
-	 * per-zone recalculation and we are still single-threaded init context
-	 * with no reclaim pressure yet.
+	 * Pair the reserve with the scale factor the ROM's post_boot writes, so
+	 * that script (which runs again at sys.boot_completed) is a no-op here
+	 * instead of a step backwards.
 	 */
-	if (watermark_scale_factor != tier->watermark_scale_factor) {
-		watermark_scale_factor = tier->watermark_scale_factor;
-		setup_per_zone_wmarks();
-	}
+	watermark_scale_factor = 1;
+
+	/*
+	 * Watermarks are latched at boot, so recompute them for the new efk and
+	 * scale factor. Safe here: this is a spinlock around the per-zone
+	 * recalculation and we are still single-threaded init context with no
+	 * reclaim pressure yet.
+	 */
+	setup_per_zone_wmarks();
 
 #ifdef CONFIG_LRU_GEN
 	/* kswapd is already running, hence the WRITE_ONCE (it uses READ_ONCE). */
 	WRITE_ONCE(lru_gen_spread, tier->lru_gen_spread);
 #endif
 
-	pr_info("ram_tune: %s tier for %lu MB RAM: swappiness=%d vfs_cache_pressure=%d dirty=%d/%d watermark_scale_factor=%d page_cluster=%d\n",
+	pr_info("ram_tune: %s tier for %lu MB RAM: swappiness=%d vfs_cache_pressure=%d dirty=%d/%d extra_free_kbytes=%d page_cluster=%d\n",
 		tier->name, mb, tier->swappiness, tier->vfs_cache_pressure,
 		vm_dirty_ratio, dirty_background_ratio,
-		watermark_scale_factor, page_cluster);
+		extra_free_kbytes, page_cluster);
 
 	return 0;
 }

@@ -17,9 +17,9 @@ One zip for all four — it ships its own DTB and DTBO.
 
 - KernelSU v3.3.0-52 built in (manager APK in the release)
 - SUSFS v2.3.0 + NoMount v2.0.0 hiding stack, BRENE module bundled
-- BFQ I/O scheduler and TCP BBR by default
-- MGLRU backport (compiled in, off by default, runtime toggle)
-- Memory tuned to installed RAM — 4/6/8 GB profiles applied at boot (kswapd reserve, swappiness, cache pressure, dirty limits, swapin readahead)
+- CFQ I/O scheduler (BFQ compiled in and selectable per disk) and TCP BBR by default
+- MGLRU backport stays in-tree but compiled out since #109 — it was never active, and CI keeps it out
+- Memory tuned to installed RAM — 4/6/8 GB profiles applied at boot (kswapd reserve via `extra_free_kbytes`, so ROM post_boot cannot erase it; swappiness, cache pressure, dirty limits, swapin readahead)
 - ext4, F2FS (compression + encryption), EROFS, exFAT, NTFS
 - Android 13–17 support — **A17 tested and working on Evolution X**; full ACK eBPF backport compiled in (ring buffer, in-kernel BTF, iterators, trampolines, **BPF LSM**) — sockmap/sk_msg stays off because that part of the backport does not compile here; see RELEASE_NOTES for the A16/A17 compatibility audit
 - **Network tuning for mobile data** — BBR congestion control and `fq_codel` (no bufferbloat) as defaults, plus TCP defaults that survive idle periods and broken path-MTU discovery; all runtime-overridable. WiFi guidance (the ROM's `WCNSS_qcom_cfg.ini`) in RELEASE_NOTES

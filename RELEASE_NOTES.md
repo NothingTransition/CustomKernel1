@@ -23,7 +23,7 @@ Linux 4.14.357-openela · built with Clang/LLVM 18 · A-only flash
 - **BRENE v0.0.68** module bundled — SUSFS rules control panel
 
 ### Storage / IO
-- **BFQ** I/O scheduler — compiled in and set as the system default (replaces CFQ; noop/deadline/mq-deadline/kyber still selectable per-disk)
+- **CFQ** I/O scheduler — the system default again since #109 (the ROM tunes CFQ-family blkio knobs that BFQ does not expose, and the known-good Imperial-X build runs it). **BFQ** stays compiled in and selectable per-disk, as do noop/deadline/mq-deadline/kyber
 - BFQ cgroup (per-app) scheduling support
 - **BLK_WBT** block writeback throttling (sq + mq) — smooths background writes so foreground operations stay responsive
 
@@ -32,21 +32,17 @@ Linux 4.14.357-openela · built with Clang/LLVM 18 · A-only flash
 
   | knob | 4 GB | 6 GB | 8 GB |
   |---|---|---|---|
-  | kswapd reserve (`watermark_scale_factor`) | ~38 MB | ~43 MB | ~39 MB |
+  | kswapd reserve (`extra_free_kbytes`) | ~38 MB | ~43 MB | ~39 MB |
   | `swappiness` | 100 | 100 | 100 |
   | `vfs_cache_pressure` | 150 | 125 | 100 |
   | `dirty_ratio` / `dirty_background_ratio` | 10 / 5 | 15 / 5 | 20 / 10 |
   | `page_cluster` (swapin readahead) | 0 | 0 | 0 |
 
   - The **kswapd reserve** is the anti-stutter one: stock leaves only ~7 MB on 4 GB, which is not enough to absorb an allocation burst, so the kernel falls into *direct* reclaim and everything stalls. ~40 MB on every tier lets reclaim happen in the background where it belongs.
+  - It is written as **`extra_free_kbytes`** (Qualcomm's "efk") rather than as `watermark_scale_factor`, on purpose: the ROM's post_boot forces `watermark_scale_factor=1` ("we are using efk") and runs **twice** — at `on init` and again at `sys.boot_completed=1` — so a reserve expressed that way is erased after boot, while `extra_free_kbytes` is not written by any ROM script. Both stay ordinary sysctls, overridable by root at runtime.
   - **`swappiness = 100`** because swap here is zram (compressed RAM), not a disk — the 60 default is a rotating-disk heuristic that leaves zram underused.
   - **`page_cluster = 0`** because zram is random access: reading 8 pages to satisfy a 1-page swapin is wasted work.
-- **Multigenerational LRU (MGLRU)** — backported from the Android 4.14 FROMLIST/BACKPORT series and compiled into the kernel (builds #97+ verify the symbols are linked in), **OFF by default** (stock/classic reclaim runs out of the box; early field report of a hang during idle charging under MGLRU — kept available for testing but not enabled). Its aging rate is now tuned per RAM tier, so enabling it needs no further setup.
-  - Switch ON: `su -c "echo 1 > /sys/kernel/mm/lru_gen/enabled"`
-  - Switch OFF: `su -c "echo 0 > /sys/kernel/mm/lru_gen/enabled"`
-  - Check state: `su -c "cat /sys/kernel/mm/lru_gen/enabled"` (0 = classic, 1 = MGLRU)
-  - Note: the switch resets to OFF on every reboot
-  - Runtime stats: `/sys/kernel/mm/lru_gen`, debugfs stats off (LRU_GEN_STATS unset)
+- **Multigenerational LRU (MGLRU)** — compiled out since #109 (`# CONFIG_LRU_GEN is not set`). It was only ever inert here (`LRU_GEN_ENABLED` was off, so none of it ran) and an early field report had a hang with it enabled, so it is now dead weight out of the image. The source stays in `mm/` and the document in `Documentation/vm/multigen_lru.rst` for a future retry; CI asserts it stays out of both the .config and the linked image.
 
 ### Networking
 - **TCP BBR** congestion control — compiled in and set as the system default
@@ -62,8 +58,8 @@ Linux 4.14.357-openela · built with Clang/LLVM 18 · A-only flash
 - **Whole miatoll family supported**: the zip ships kernel + Stormbreaker's own DTB + DTBO. The DTB is the shared miatoll base (`cust-atoll-ab`) and the DTBO carries per-device overlays for **curtana, excalibur, gram and joyeuse** — one zip flashes all four
 - **Official osm0sis AnyKernel3 template**: flasher structure, `anykernel.sh` and all tools updated to the current upstream osm0sis/AnyKernel3 master layout
 
-### Containers & Android 17 readiness
-- **Droidspaces-ready** (LXC-like containers): PID/IPC/USER namespaces, SYSVIPC, POSIX mqueue, devtmpfs, full cgroup set (device/pids/net_prio), nftables + NAT/bridge netfilter enabled per the official Droidspaces non-GKI fragment; cgroup v1 prefix compatibility patch applied
+### Android 16/17 readiness
+- **Containers / Droidspaces — removed in #109**: SYSVIPC, POSIX mqueue, PID/USER namespaces, cgroup device/pids/net_prio, nftables, bridge netfilter and xt addrtype are compiled out. Nothing in Android uses them; the Imperial-X kernel boots this same ROM with all of them off, so they were pure surface area. What a container still needs that this kernel keeps: UTS/NET namespaces, VETH/BRIDGE, cgroups, overlayfs, iptables/netfilter core
 - **Android 15 ROM parity**: MSDOS_FS, EXT4_ENCRYPTION, NETFILTER_XT_TARGET_TRACE aligned with A13-A15 ROM kernels
 - **Android 17 boot parity — tested working on Evolution X A17 (miatoll)**: defconfig aligned with a known-working Imperial-X A17 build (extracted from its shipped kernel config) — LZ4 ramdisk decompression (RD_LZ4), audit subsystem, full ftrace/tracing core, netfilter LOG/NFLOG/quota2-log targets, HIDRAW (FCM 7), EROFS per-cpu decompression kthreads, larger kernel log buffer. Boots past the OS animation where earlier builds hung at the boot logo. If a specific A17 ROM still misbehaves, report it — the stack has a runtime kill switch and builds are preserved per release for rollback
 
