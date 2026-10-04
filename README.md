@@ -36,10 +36,11 @@ Flash the release zip in recovery, reboot, install the manager APK. Done.
 | Diagnostic | `diag-<N>` (**pre-release**) | Experimental bisect/test kernels (see `diag/README.md`). Never for daily use. |
 | Known-good | `stormbreaker-v108` | The v105 tree. If a newer build misbehaves on a strict ROM, flash this. |
 
-Boot status on **Infinity X 4.0 (A17)**: `v108` boots; `v109` is the newest
-build, but that ROM currently only lets the Imperial-X kernel boot it — the
-bisect for that is parked (see `diag/README.md`). The stack is field-tested
-working on Evolution X A17.
+Boot status on **Infinity X 4.0 (A17)**: `v108` is the one to flash — the newer
+builds (`v109` and the `v110` housekeeping rebuild) are blocked there, because
+that ROM currently only lets the Imperial-X kernel boot it; the bisect for that
+is parked (see `diag/README.md`). The stack is field-tested working on
+Evolution X A17.
 
 ## Build
 
