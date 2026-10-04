@@ -20,6 +20,8 @@ idle_page_tracking.txt
 	- description of the idle page tracking feature.
 ksm.txt
 	- how to use the Kernel Samepage Merging feature.
+multigen_lru.rst
+	- the multigenerational LRU: config, runtime control and integration.
 numa
 	- information about NUMA specific code in the Linux vm.
 numa_memory_policy.txt

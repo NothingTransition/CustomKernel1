@@ -28,12 +28,30 @@ Linux 4.14.357-openela · built with Clang/LLVM 18 · A-only flash
 - **BLK_WBT** block writeback throttling (sq + mq) — smooths background writes so foreground operations stay responsive
 
 ### Memory
-- **Stock VM defaults as of #107** — the RAM-tier auto-tuning (`mm/ram_tune.c`) and the MGLRU backport were both removed from the source tree (not just switched off): no custom swappiness/watermark/dirty-ratio profiles, no `/sys/kernel/mm/lru_gen`, no leftover code — just the stock 4.14 two-list LRU and VM defaults. Every knob involved is a normal sysctl, so a ROM or root can still set any of them at runtime.
+- **RAM-tier auto-tuning** — one image covers the whole miatoll family (4/6/8 GB), so the kernel detects installed RAM at boot and applies the profile that fits instead of one compromise for all. All values stay ordinary sysctls, so ROM init scripts / root can still override them:
+
+  | knob | 4 GB | 6 GB | 8 GB |
+  |---|---|---|---|
+  | kswapd reserve (`watermark_scale_factor`) | ~38 MB | ~43 MB | ~39 MB |
+  | `swappiness` | 100 | 100 | 100 |
+  | `vfs_cache_pressure` | 150 | 125 | 100 |
+  | `dirty_ratio` / `dirty_background_ratio` | 10 / 5 | 15 / 5 | 20 / 10 |
+  | `page_cluster` (swapin readahead) | 0 | 0 | 0 |
+
+  - The **kswapd reserve** is the anti-stutter one: stock leaves only ~7 MB on 4 GB, which is not enough to absorb an allocation burst, so the kernel falls into *direct* reclaim and everything stalls. ~40 MB on every tier lets reclaim happen in the background where it belongs.
+  - **`swappiness = 100`** because swap here is zram (compressed RAM), not a disk — the 60 default is a rotating-disk heuristic that leaves zram underused.
+  - **`page_cluster = 0`** because zram is random access: reading 8 pages to satisfy a 1-page swapin is wasted work.
+- **Multigenerational LRU (MGLRU)** — backported from the Android 4.14 FROMLIST/BACKPORT series and compiled into the kernel (builds #97+ verify the symbols are linked in), **OFF by default** (stock/classic reclaim runs out of the box; early field report of a hang during idle charging under MGLRU — kept available for testing but not enabled). Its aging rate is now tuned per RAM tier, so enabling it needs no further setup.
+  - Switch ON: `su -c "echo 1 > /sys/kernel/mm/lru_gen/enabled"`
+  - Switch OFF: `su -c "echo 0 > /sys/kernel/mm/lru_gen/enabled"`
+  - Check state: `su -c "cat /sys/kernel/mm/lru_gen/enabled"` (0 = classic, 1 = MGLRU)
+  - Note: the switch resets to OFF on every reboot
+  - Runtime stats: `/sys/kernel/mm/lru_gen`, debugfs stats off (LRU_GEN_STATS unset)
 
 ### Networking
-- **Stock defaults as of #106/#107** — CUBIC congestion control and the kernel's own `pfifo_fast` qdisc; the custom BBR default, the forced `fq_codel` default and the `net/net_tune.c` TCP overrides were removed for a lighter build
-- **CUBIC is the only congestion control compiled in as of #107** — Vegas, Westwood+, BIC, HTCP and BBR are all removed; `CONFIG_DEFAULT_TCP_CONG="cubic"` is unchanged
-- **FQ_CODEL** and **FQ** packet schedulers remain compiled in — usable per-interface with `tc`
+- **TCP BBR** congestion control — compiled in and set as the system default
+- Additional TCP congestion controls built in: **Vegas, Westwood+, BIC, HTCP** (plus CUBIC) — switchable per-route/app
+- **FQ_CODEL** and **FQ** packet schedulers — bufferbloat control for steadier latency under load
 - BPF / eBPF support (syscall + JIT)
 
 ### Filesystems & compatibility
@@ -45,7 +63,7 @@ Linux 4.14.357-openela · built with Clang/LLVM 18 · A-only flash
 - **Official osm0sis AnyKernel3 template**: flasher structure, `anykernel.sh` and all tools updated to the current upstream osm0sis/AnyKernel3 master layout
 
 ### Containers & Android 17 readiness
-- **Containers: fully removed as of #107** — the entire Droidspaces non-GKI fragment is gone: SYSVIPC (off in #106), POSIX mqueue, user + PID namespaces, the pids/devices/net_prio cgroups, bridge netfilter, nftables, xt_ADDRTYPE and devtmpfs all return to their stock values, and the Droidspaces cgroup v1 patch in `kernel/cgroup/cgroup.c` is reverted. The kernel now matches the configuration the shipping LineageOS 24 (A17) miatoll kernel uses; container runtimes will not run on this build
+- **Droidspaces-ready** (LXC-like containers): PID/IPC/USER namespaces, SYSVIPC, POSIX mqueue, devtmpfs, full cgroup set (device/pids/net_prio), nftables + NAT/bridge netfilter enabled per the official Droidspaces non-GKI fragment; cgroup v1 prefix compatibility patch applied
 - **Android 15 ROM parity**: MSDOS_FS, EXT4_ENCRYPTION, NETFILTER_XT_TARGET_TRACE aligned with A13-A15 ROM kernels
 - **Android 17 boot parity — tested working on Evolution X A17 (miatoll)**: defconfig aligned with a known-working Imperial-X A17 build (extracted from its shipped kernel config) — LZ4 ramdisk decompression (RD_LZ4), audit subsystem, full ftrace/tracing core, netfilter LOG/NFLOG/quota2-log targets, HIDRAW (FCM 7), EROFS per-cpu decompression kthreads, larger kernel log buffer. Boots past the OS animation where earlier builds hung at the boot logo. If a specific A17 ROM still misbehaves, report it — the stack has a runtime kill switch and builds are preserved per release for rollback
 
@@ -58,11 +76,11 @@ Android userspace requirements verified present in this kernel:
 | Area | What the kernel provides |
 |---|---|
 | eBPF | syscall + JIT (JIT always-on, unprivileged off), cgroup BPF, tc BPF, **BPF LSM**, ring buffer, iterators (sockmap/sk_msg: see gaps) |
-| Memory / limits | PSI (on by default — used by lmkd), cgroups (sched, cpuacct, freezer, cpuset), WALT + SCHED_TUNE + schedutil |
-| Security | SELinux (develop + bootparam + AVC stats, checkreqprot=0), net/UTS namespaces, seccomp filter, KASLR, STRICT_KERNEL_RWX, HARDENED_USERCOPY, INIT_ON_ALLOC, PAN/UAO |
+| Memory / limits | PSI (on by default — used by lmkd), cgroups (sched, cpuacct, freezer, pids, devices, net_prio, cpuset), WALT + SCHED_TUNE + schedutil |
+| Security | SELinux (develop + bootparam + AVC stats, checkreqprot=0), namespaces incl. user, seccomp filter, KASLR, STRICT_KERNEL_RWX, HARDENED_USERCOPY, INIT_ON_ALLOC, PAN/UAO |
 | Storage / encryption | FBE (ext4 + f2fs encryption), metadata encryption (`dm-default-key`), AVB (`dm-verity`), fs-verity, project quotas, incremental FS, EROFS/exFAT/NTFS |
-| IPC / IO | binder + hwbinder + vndbinder, ashmem, ion, sync_file, tmpfs xattr/ACL, overlayfs, FUSE |
-| Networking | xtables, conntrack, eBPF tc, TUN/PPP(-MPPE)/L2TP/IPsec, veth/bridge/NAT, XFRM |
+| IPC / IO | binder + hwbinder + vndbinder, ashmem, ion, sync_file, devtmpfs, tmpfs xattr/ACL, overlayfs, FUSE |
+| Networking | nftables + xtables, conntrack, eBPF tc, TUN/PPP(-MPPE)/L2TP/IPsec, veth/bridge/NAT, XFRM |
 
 Known gaps, stated plainly:
 
@@ -72,18 +90,27 @@ Known gaps, stated plainly:
 - **16 KB page size** (an Android 15+ requirement for *new* devices) isn't applicable here: this SoC's vendor blobs and this 4.14 tree are 4 KB-page. Apps are unaffected on a 4 KB kernel.
 - Intentionally off for performance/size, not compatibility: KPTI (`UNMAP_KERNEL_AT_EL0` — atoll's cores aren't Meltdown-affected), `FORTIFY_SOURCE`, `SCHED_AUTOGROUP`.
 
-### Network: stock defaults as of #106/#107
+### Network tuning: mobile data + WiFi
 
-The custom network tuning introduced in #105 was removed in #106 for a lighter kernel. The defaults are once again the kernel's own: CUBIC congestion control and `pfifo_fast`, with no boot-time sysctl overrides.
+The kernel cannot raise what the radio gives you — peak throughput is modem firmware, carrier provisioning, band and signal. What it *can* do is use the link well, and that is what this build tunes. Being precise about the difference matters, so here is the whole change set:
 
-| Knob | Value now | Notes |
-|---|---|---|
-| `tcp_congestion_control` | `cubic` (kernel default; **CUBIC is the only one compiled in** as of #107) | setting it at runtime is pointless now — no other congestion control is built in |
-| `net.core.default_qdisc` | `pfifo_fast` (kernel default) | `fq_codel`/`fq` are still compiled in — apply per-device with `tc qdisc replace dev <if> root fq_codel` if you want bufferbloat control |
-| `tcp_slow_start_after_idle` | `1` (kernel default) | a ROM or root script can set it to `0` at runtime if desired |
-| `tcp_mtu_probing` | `0` (kernel default) | a ROM or root script can set it to `1` at runtime if desired |
+| Knob | Value | Why | Change it back at runtime |
+|---|---|---|---|
+| `tcp_congestion_control` | `bbr` (already the default) | BBR behaves far better than CUBIC on lossy, high-RTT cellular links | `echo cubic > /proc/sys/net/ipv4/tcp_congestion_control` |
+| `net.core.default_qdisc` | `fq_codel` (new) | The old default was `pfifo_fast`, which just fills up: upload anything and RTT balloons, so everything *feels* slow. fq_codel keeps the queue delay low and stops one bulk flow from starving the rest — this is the "smooth" part | `echo pfifo_fast > /proc/sys/net/core/default_qdisc` |
+| `tcp_slow_start_after_idle` | `0` (new) | The stock default resets the congestion window whenever a flow has been idle, so the first seconds after the phone wakes are spent re-ramping | `echo 1 > /proc/sys/net/ipv4/tcp_slow_start_after_idle` |
+| `tcp_mtu_probing` | `1` (new) | Some carriers/CGNATs drop ICMP "fragmentation needed"; without probing, connections hang on large packets instead of finding an MSS that gets through | `echo 0 > /proc/sys/net/ipv4/tcp_mtu_probing` |
 
-One honest note: the kernel cannot raise what the radio gives you — peak throughput is modem firmware, carrier provisioning, band and signal. And explicitly **not** done here: raising `tcp_rmem`/`tcp_wmem`. Those windows are auto-tuned per connection and already sized for fast links; oversized static buffers don't raise throughput, they add queuing delay and pin memory. "Internet booster" scripts that do that are placebo.
+Verify on the phone (root):
+
+```
+cat /proc/sys/net/ipv4/tcp_congestion_control      # bbr
+cat /proc/sys/net/core/default_qdisc               # fq_codel
+cat /proc/sys/net/ipv4/tcp_slow_start_after_idle   # 0
+cat /proc/sys/net/ipv4/tcp_mtu_probing             # 1
+```
+
+Two honest notes. A qdisc change applies to network devices created **after** it is set; the data interfaces (`rmnet_data*` for cellular, `wlan0`) are created at runtime after boot, so they get it — an interface that already existed keeps its old qdisc until recreated, or fix it per device with `tc qdisc replace dev <if> root fq_codel` (needs the `tc` tool). And explicitly **not** done here: raising `tcp_rmem`/`tcp_wmem`. Those windows are auto-tuned per connection and already sized for fast links; oversized static buffers don't raise throughput, they add queuing delay and pin memory. "Internet booster" scripts that do that are placebo.
 
 #### WiFi: what a kernel can and cannot do
 
