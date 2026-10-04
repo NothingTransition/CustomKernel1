@@ -1,0 +1,4 @@
+v93 retry
+why: first attempt failed at release creation; switched to the REST API with
+     ::error:: annotations so the failure is readable from the API.
+date: 2026-10-04
