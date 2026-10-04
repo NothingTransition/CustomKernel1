@@ -21,7 +21,6 @@
 #include <linux/vmalloc.h>
 #include <linux/swap_slots.h>
 #include <linux/huge_mm.h>
-#include <linux/mm_inline.h>
 
 #include <asm/pgtable.h>
 #include "internal.h"
@@ -112,7 +111,7 @@ void show_swap_cache_info(void)
  * __add_to_swap_cache resembles add_to_page_cache_locked on swapper_space,
  * but sets SwapCache flag and private instead of mapping and index.
  */
-int __add_to_swap_cache(struct page *page, swp_entry_t entry, void **shadowp)
+int __add_to_swap_cache(struct page *page, swp_entry_t entry)
 {
 	int error, i, nr = hpage_nr_pages(page);
 	struct address_space *address_space;
@@ -131,22 +130,6 @@ int __add_to_swap_cache(struct page *page, swp_entry_t entry, void **shadowp)
 		set_page_private(page + i, entry.val + i);
 		error = radix_tree_insert(&address_space->page_tree,
 					  idx + i, page + i);
-		if (unlikely(error == -EEXIST)) {
-			/*
-			 * A multigenerational lru shadow entry may be
-			 * occupying this slot; evict it and hand it back so
-			 * the caller can account the refault.
-			 */
-			void *old;
-
-			old = radix_tree_delete(&address_space->page_tree,
-						idx + i);
-			if (i == 0 && shadowp && old &&
-			    radix_tree_exceptional_entry(old))
-				*shadowp = old;
-			error = radix_tree_insert(&address_space->page_tree,
-						  idx + i, page + i);
-		}
 		if (unlikely(error))
 			break;
 	}
@@ -181,7 +164,7 @@ int add_to_swap_cache(struct page *page, swp_entry_t entry, gfp_t gfp_mask)
 
 	error = radix_tree_maybe_preload_order(gfp_mask, compound_order(page));
 	if (!error) {
-		error = __add_to_swap_cache(page, entry, NULL);
+		error = __add_to_swap_cache(page, entry);
 		radix_tree_preload_end();
 	}
 	return error;
@@ -191,7 +174,7 @@ int add_to_swap_cache(struct page *page, swp_entry_t entry, gfp_t gfp_mask)
  * This must be called only on pages that have
  * been verified to be in the swap cache.
  */
-void __delete_from_swap_cache(struct page *page, void *shadow)
+void __delete_from_swap_cache(struct page *page)
 {
 	struct address_space *address_space;
 	int i, nr = hpage_nr_pages(page);
@@ -208,15 +191,6 @@ void __delete_from_swap_cache(struct page *page, void *shadow)
 	for (i = 0; i < nr; i++) {
 		radix_tree_delete(&address_space->page_tree, idx + i);
 		set_page_private(page + i, 0);
-	}
-	/*
-	 * Store the multigenerational lru shadow for single pages; compound
-	 * pages span multiple slots and have no single slot to remember them.
-	 */
-	if (shadow && nr == 1) {
-		int err = radix_tree_insert(&address_space->page_tree, idx,
-					    shadow);
-		VM_BUG_ON(err);
 	}
 	ClearPageSwapCache(page);
 	address_space->nrpages -= nr;
@@ -300,7 +274,7 @@ void delete_from_swap_cache(struct page *page)
 
 	address_space = swap_address_space(entry);
 	spin_lock_irq(&address_space->tree_lock);
-	__delete_from_swap_cache(page, NULL);
+	__delete_from_swap_cache(page);
 	spin_unlock_irq(&address_space->tree_lock);
 
 	put_swap_page(page, entry);
@@ -406,7 +380,6 @@ struct page *__read_swap_cache_async(swp_entry_t entry, gfp_t gfp_mask,
 	struct page *found_page, *new_page = NULL;
 	struct address_space *swapper_space = swap_address_space(entry);
 	int err;
-	void *shadow = NULL;
 	*new_page_allocated = false;
 
 	do {
@@ -468,16 +441,13 @@ struct page *__read_swap_cache_async(swp_entry_t entry, gfp_t gfp_mask,
 		/* May fail (-ENOMEM) if radix-tree node allocation failed. */
 		__SetPageLocked(new_page);
 		__SetPageSwapBacked(new_page);
-		err = __add_to_swap_cache(new_page, entry, &shadow);
+		err = __add_to_swap_cache(new_page, entry);
 		if (likely(!err)) {
 			radix_tree_preload_end();
 			/*
 			 * Initiate read into locked page and return.
 			 */
-			if (!lru_gen_enabled())
-				SetPageWorkingset(new_page);
-			else if (shadow)
-				lru_gen_refault(new_page, shadow);
+			SetPageWorkingset(new_page);
 			lru_cache_add_anon(new_page);
 			*new_page_allocated = true;
 			return new_page;

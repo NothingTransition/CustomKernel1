@@ -1398,8 +1398,6 @@ CONFIG_BLK_DEV=y
 CONFIG_ZRAM=y
 CONFIG_ZRAM_DEDUP=y
 # CONFIG_ZRAM_WRITEBACK is not set
-# MGLRU (CONFIG_LRU_GEN) removed in #106 - back to the stock two-list LRU.
-# CONFIG_LRU_GEN is not set
 # CONFIG_BLK_DEV_DAC960 is not set
 # CONFIG_BLK_DEV_UMEM is not set
 # CONFIG_BLK_DEV_COW_COMMON is not set

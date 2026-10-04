@@ -28,20 +28,7 @@ Linux 4.14.357-openela · built with Clang/LLVM 18 · A-only flash
 - **BLK_WBT** block writeback throttling (sq + mq) — smooths background writes so foreground operations stay responsive
 
 ### Memory
-- **RAM-tier auto-tuning** — one image covers the whole miatoll family (4/6/8 GB), so the kernel detects installed RAM at boot and applies the profile that fits instead of one compromise for all. All values stay ordinary sysctls, so ROM init scripts / root can still override them:
-
-  | knob | 4 GB | 6 GB | 8 GB |
-  |---|---|---|---|
-  | kswapd reserve (`watermark_scale_factor`) | ~38 MB | ~43 MB | ~39 MB |
-  | `swappiness` | 100 | 100 | 100 |
-  | `vfs_cache_pressure` | 150 | 125 | 100 |
-  | `dirty_ratio` / `dirty_background_ratio` | 10 / 5 | 15 / 5 | 20 / 10 |
-  | `page_cluster` (swapin readahead) | 0 | 0 | 0 |
-
-  - The **kswapd reserve** is the anti-stutter one: stock leaves only ~7 MB on 4 GB, which is not enough to absorb an allocation burst, so the kernel falls into *direct* reclaim and everything stalls. ~40 MB on every tier lets reclaim happen in the background where it belongs.
-  - **`swappiness = 100`** because swap here is zram (compressed RAM), not a disk — the 60 default is a rotating-disk heuristic that leaves zram underused.
-  - **`page_cluster = 0`** because zram is random access: reading 8 pages to satisfy a 1-page swapin is wasted work.
-- **Multigenerational LRU (MGLRU) — removed as of #106.** `# CONFIG_LRU_GEN is not set`, so the backport is compiled out and the kernel uses the stock two-list LRU. `/sys/kernel/mm/lru_gen` no longer exists, and the RAM-tier tuner no longer sets its `spread` value. Reason: a lighter image with no extra per-process/per-memcg bookkeeping — the feature was never on by default anyway.
+- **Stock VM defaults as of #107** — the RAM-tier auto-tuning (`mm/ram_tune.c`) and the MGLRU backport were both removed: no custom swappiness/watermark/dirty-ratio profiles, no `/sys/kernel/mm/lru_gen`, just the stock 4.14 two-list LRU and VM defaults. Every knob involved is a normal sysctl, so a ROM or root can still set any of them at runtime.
 
 ### Networking
 - **Stock defaults as of #106** — CUBIC congestion control and the kernel's own `pfifo_fast` qdisc; the custom BBR default, the forced `fq_codel` default and the `net/net_tune.c` TCP overrides were removed for a lighter build
