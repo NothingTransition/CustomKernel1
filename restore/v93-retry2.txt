@@ -1,0 +1,3 @@
+v93 retry 2
+fix: the API wants make_latest as the string "false" (-f), not a boolean (-F).
+date: 2026-10-04

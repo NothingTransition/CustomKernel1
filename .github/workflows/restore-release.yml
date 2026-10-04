@@ -88,7 +88,7 @@ jobs:
                 -f tag_name="$TAG" \
                 -f target_commitish=d62bca985c13de0a6041b9d81d817cadfb3fed55 \
                 -f name="Stormbreaker v93 — restored original build" \
-                -F draft=false -F prerelease=false -F make_latest=false \
+                -F draft=false -F prerelease=false -f make_latest=false \
                 -f body="$(cat notes.md)" 2>&1); then
             fail "gh api releases create: $out"
           fi
