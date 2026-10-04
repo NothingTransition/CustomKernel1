@@ -22,13 +22,17 @@ on:
       - "restore/**"
 
 permissions:
-  contents: write
-  actions: read
+  contents: read
 
 jobs:
   restore:
     name: Restore stormbreaker-v93 from its artifact
     runs-on: ubuntu-24.04
+    # Same scope placement as the main release job (which creates releases
+    # successfully in this repo): job-level contents:write, not workflow-level.
+    permissions:
+      contents: write
+      actions: read
     steps:
       - name: Download the original #93 artifact
         uses: actions/download-artifact@v4
@@ -79,9 +83,12 @@ jobs:
           fail() { printf '%s\n' "$1" | tail -25 | while IFS= read -r l; do echo "::error::$l"; done; exit 1; }
 
           TAG=stormbreaker-v93
+          echo "== token diagnostics =="
+          gh auth status 2>&1 | sed "s/gho_[A-Za-z0-9_]*/***/g" | head -6 || true
+          gh api "repos/$GITHUB_REPOSITORY" --jq '.permissions // "no permissions field"' 2>&1 | head -3 || true
           echo "== clearing any existing release/tag =="
-          gh release view "$TAG" >/dev/null 2>&1 && \
-            { gh release delete "$TAG" --yes --cleanup-tag || fail "delete failed"; } || echo "no existing release"
+          GH_REPO="$GITHUB_REPOSITORY" gh release view "$TAG" >/dev/null 2>&1 && \
+            { GH_REPO="$GITHUB_REPOSITORY" gh release delete "$TAG" --yes --cleanup-tag || fail "delete failed"; } || echo "no existing release"
 
           echo "== creating the release =="
           if ! out=$(gh api -X POST "repos/$GITHUB_REPOSITORY/releases" \
@@ -107,5 +114,5 @@ jobs:
             || echo "uploaded (raw): $up"
 
           echo "== verify =="
-          gh release view "$TAG" --json url,assets \
+          GH_REPO="$GITHUB_REPOSITORY" gh release view "$TAG" --json url,assets \
             --jq '.url, (.assets[] | "  \(.name) \(.size) bytes")'

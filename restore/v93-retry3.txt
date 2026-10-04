@@ -1,0 +1,4 @@
+v93 retry 3
+fix: declare contents:write at the JOB level (same placement as the working
+     release job); add token diagnostics and GH_REPO to the gh calls.
+date: 2026-10-04
