@@ -1,0 +1,2 @@
+round 1 — diet / hz100 / memoff / vmoff
+triggered: 2026-10-04

@@ -1,0 +1,292 @@
+name: Miatoll DIAG builds (not releases)
+
+# Diagnostic kernels for the intermittent boot stall on Infinity X 4.0 (4 GB)
+# reported against both v108 and v109. Deliberately separate from
+# build-miatoll.yml: it must never cancel a normal build and it publishes a
+# pre-release, never "Latest".
+#
+# Each matrix entry turns off exactly one hypothesis against the v109 tree and
+# keeps KernelSU/SUSFS/NoMount and the A17 userspace configuration untouched:
+#
+#   diet    - everything we still differ from Imperial-X on the boot-relevant
+#             non-root paths: MEMCG(+swap), HZ 300->100, F2FS compression,
+#             MSM_PERFORMANCE, SCHED_CORE_CTL, RMNET_PERF/SHS, our tuners
+#   hz100   - HZ 300 -> 100 only
+#   memoff  - memory cgroup off only
+#   vmoff   - mm/ram_tune.c + net/net_tune.c initcalls not run
+#
+# Trigger: push touching this file or diag/**.
+
+on:
+  push:
+    branches:
+      - arena/01a0bfbb-customkernel1
+      - arena/01a1039d-customkernel1
+    paths:
+      - ".github/workflows/diag-miatoll.yml"
+      - "diag/**"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: miatoll-diag-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  ARCH: arm64
+
+jobs:
+  build:
+    name: diag ${{ matrix.variant }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        variant:
+          - diet
+          - hz100
+          - memoff
+          - vmoff
+
+    steps:
+      - name: Checkout kernel source
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison ccache clang flex git kmod libelf-dev libc6-dev lld llvm make \
+            libssl-dev python3 rsync zip
+
+      - name: Restore compiler cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache
+          key: miatoll-ccache-${{ runner.os }}-${{ github.sha }}-diag-${{ matrix.variant }}
+          restore-keys: |
+            miatoll-ccache-${{ runner.os }}-
+
+      - name: Verify LLVM toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          {
+            echo "Toolchain source: Ubuntu 24.04 LLVM"
+            clang --version
+            ld.lld --version
+          } | tee toolchain-info.txt
+
+      - name: Apply diagnostic variant
+        env:
+          VARIANT: ${{ matrix.variant }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os, pathlib, re, sys
+
+          variant = os.environ["VARIANT"]
+          D = pathlib.Path("arch/arm64/configs/vendor/xiaomi/miatoll_defconfig")
+
+          VARIANTS = {
+              # Imperial-X timer rate: everything jiffy-based rounds cleanly.
+              "hz100": {
+                  "config": {"HZ_100": "y", "HZ_300": "n", "HZ": "100"},
+                  "tuners": [],
+              },
+              # memory cgroup off - exactly what the known-good Imperial-X runs.
+              "memoff": {
+                  "config": {"MEMCG": "n", "MEMCG_SWAP": "n", "MEMCG_SWAP_ENABLED": "n"},
+                  "tuners": [],
+              },
+              # v109 kernel, but our two boot-time tuners do not run at all.
+              "vmoff": {
+                  "config": {},
+                  "tuners": ["mm/ram_tune.c", "net/net_tune.c"],
+              },
+              # v109 minus every boot-relevant non-root delta vs Imperial-X.
+              "diet": {
+                  "config": {
+                      "HZ_100": "y", "HZ_300": "n", "HZ": "100",
+                      "MEMCG": "n", "MEMCG_SWAP": "n", "MEMCG_SWAP_ENABLED": "n",
+                      "F2FS_FS_COMPRESSION": "n",
+                      "MSM_PERFORMANCE": "n",
+                      "SCHED_CORE_CTL": "n",
+                      "RMNET_PERF": "n",
+                      "RMNET_SHS": "n",
+                  },
+                  "tuners": ["mm/ram_tune.c", "net/net_tune.c"],
+              },
+          }
+
+          if variant not in VARIANTS:
+              sys.exit("unknown variant: %s" % variant)
+          plan = VARIANTS[variant]
+
+
+          def set_sym(text, sym, val):
+              new = ("# CONFIG_%s is not set" % sym) if val == "n" \
+                  else ("CONFIG_%s=%s" % (sym, val))
+              pat = re.compile(r"^(?:# CONFIG_%s is not set|CONFIG_%s=.*)$"
+                               % (re.escape(sym), re.escape(sym)))
+              out, done = [], False
+              for line in text.splitlines():
+                  if pat.match(line):
+                      if not done:
+                          out.append(new)
+                          done = True
+                      # further duplicates for the same symbol are dropped
+                  else:
+                      out.append(line)
+              if not done:
+                  out.append(new)
+              return "\n".join(out) + "\n"
+
+
+          text = D.read_text()
+          for sym, val in sorted(plan["config"].items()):
+              text = set_sym(text, sym, val)
+          D.write_text(text)
+
+          for path in plan["tuners"]:
+              p = pathlib.Path(path)
+              src, n = re.subn(r"^late_initcall\((ram_tune_init|net_tune_init)\);",
+                               r"/* diag: \1 initcall not run */",
+                               p.read_text(), flags=re.M)
+              if n != 1:
+                  sys.exit("expected 1 initcall in %s, found %d" % (path, n))
+              p.write_text(src)
+
+          print("variant %s applied" % variant)
+          for sym in sorted(plan["config"]):
+              print("  %s -> %s" % (sym, plan["config"][sym]))
+          for path in plan["tuners"]:
+              print("  initcall disabled in %s" % path)
+          PY
+
+      - name: Generate configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          make O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- vendor/xiaomi/miatoll_defconfig
+
+      - name: Build kernel, DTB and DTBO
+        shell: bash
+        run: |
+          set -euo pipefail
+          export USE_CCACHE=1
+          export CCACHE_DIR="$HOME/.cache/ccache"
+          export KBUILD_BUILD_USER=github-actions
+          export KBUILD_BUILD_HOST=kernel-ci
+          ccache --max-size=5G
+
+          set +e
+          make -j"$(nproc)" O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            CC='ccache clang' CROSS_COMPILE=aarch64-linux-gnu- \
+            >build.log 2>&1
+          st=$?
+          set -e
+          tail -n 30 build.log
+          if [ "$st" -ne 0 ]; then
+            grep -n -B2 -A8 'error:' build.log | head -80 || true
+            exit "$st"
+          fi
+
+      - name: Verify products and variant state
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s out/arch/arm64/boot/Image.gz
+          test -s out/arch/arm64/boot/dtb.img
+          test -s out/arch/arm64/boot/dtbo.img
+          test -s out/drivers/kernelsu/ksu.o
+          test -s out/fs/susfs.o
+          test -s out/fs/nomount/nomount.o
+
+          llvm-nm out/vmlinux > vmlinux.sym
+          grep -q ' ksu_handle_execveat$' vmlinux.sym
+          grep -q ' susfs_init$' vmlinux.sym
+          grep -q ' nomount_init$' vmlinux.sym
+
+          echo "--- variant-relevant config (resolved) ---"
+          for sym in HZ HZ_100 HZ_300 MEMCG MEMCG_SWAP MEMCG_SWAP_ENABLED \
+                     F2FS_FS_COMPRESSION MSM_PERFORMANCE SCHED_CORE_CTL \
+                     RMNET_PERF RMNET_SHS; do
+            grep -E "^(# )?CONFIG_${sym}(=| is not set)" out/.config | head -1 \
+              || echo "CONFIG_${sym}: (absent)"
+          done
+          if grep -q ' ram_tune_init$' vmlinux.sym; then
+            echo "ram_tune_init: present"
+          else
+            echo "ram_tune_init: NOT in image (expected for diet/vmoff)"
+          fi
+          if grep -q ' net_tune_init$' vmlinux.sym; then
+            echo "net_tune_init: present"
+          else
+            echo "net_tune_init: NOT in image (expected for diet/vmoff)"
+          fi
+
+          make -s O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- kernelrelease | tee kernel.release
+          sha256sum \
+            out/arch/arm64/boot/Image.gz \
+            out/arch/arm64/boot/dtb.img \
+            out/arch/arm64/boot/dtbo.img | tee SHA256SUMS
+          {
+            echo "commit=${GITHUB_SHA}"
+            echo "variant=${{ matrix.variant }}"
+            echo "DIAGNOSTIC BUILD - not a release"
+            echo "kernel.release=$(cat kernel.release)"
+            clang --version | head -n 1 | sed 's/^/clang.version=/'
+          } | tee build-info.txt
+
+      - name: Package diagnostic AnyKernel3 zip
+        env:
+          VARIANT: ${{ matrix.variant }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/package-anykernel3.sh 2>&1 | tail -n 8
+          mv "artifacts/Stormbreaker-miatoll-KSU-SUSFS-NoMount-${GITHUB_RUN_NUMBER}.zip" \
+             "artifacts/Stormbreaker-DIAG-${VARIANT}-${GITHUB_RUN_NUMBER}.zip"
+          ls -la artifacts/
+
+      - name: Upload diagnostic zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: diag-${{ matrix.variant }}
+          path: artifacts/Stormbreaker-DIAG-*.zip
+          if-no-files-found: error
+
+  release:
+    name: Publish diagnostic zips
+    needs: build
+    if: success()
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Collect diagnostic zips
+        uses: actions/download-artifact@v4
+        with:
+          path: diag-zips
+          merge-multiple: true
+
+      - name: Create pre-release with the diagnostic zips
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ls -la diag-zips/
+          TAG="diag-${GITHUB_RUN_NUMBER}"
+          gh release delete "$TAG" -R "$GITHUB_REPOSITORY" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$TAG" -R "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --prerelease \
+            --title "DIAG ${GITHUB_RUN_NUMBER} — boot-stall bisect (NOT a release)" \
+            --notes "Diagnostic kernels for the intermittent boot stall on Infinity X 4.0 (4 GB), bisected against v109. Flash ONE at a time. If a build does not boot, reflash stormbreaker-v108 or stormbreaker-v109 (both known-good) before trying the next. These are experiments, not releases - KSU/SUSFS/NoMount and the A17 configuration are identical to v109; only the named hypothesis differs." \
+            diag-zips/Stormbreaker-DIAG-*.zip
+          gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json url --jq '.url'
