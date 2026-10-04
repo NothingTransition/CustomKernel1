@@ -105,7 +105,3 @@ obj-$(CONFIG_HARDENED_USERCOPY) += usercopy.o
 obj-$(CONFIG_PERCPU_STATS) += percpu-stats.o
 obj-$(CONFIG_HMM) += hmm.o
 obj-$(CONFIG_PROCESS_RECLAIM)	+= process_reclaim.o
-
-# RAM-tier VM defaults (see mm/ram_tune.c). Linked last on purpose so its
-# late_initcall runs after the other mm/ initcalls and its values stick.
-obj-y += ram_tune.o

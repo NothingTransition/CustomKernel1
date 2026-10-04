@@ -3,6 +3,13 @@
 Full feature documentation lives in RELEASE_NOTES.md (repo). This file is
 what gets attached to each release: only what changed in that build.
 
+## #107 — slim build: MGLRU source deleted, RAM tuner out, containers out, CUBIC only
+• **MGLRU is deleted from the tree, not just switched off** — the whole 4.14 backport and its seven follow-up fixups are reverted (31 files, +231/−3,571 lines). The `LRU_GEN` Kconfig options are gone, so `/sys/kernel/mm/lru_gen` cannot come back, and CI now hard-fails if any `LRU_GEN` text or `lru_gen_*` symbol appears. This supersedes #106's compiled-out state; the kernel runs the stock two-list LRU
+• **RAM-tier VM tuning removed** — `mm/ram_tune.c` is deleted along with its build hook and the `ram_tune_init` CI check. Everything it applied was a plain sysctl (swappiness, dirty ratios, kswapd reserve, page-cluster), so stock defaults apply and a ROM or root can still set any of them at runtime
+• **Droidspaces/container support removed completely** — SYSVIPC (already off in #106), POSIX mqueue, user + PID namespaces, the pids/devices/net_prio cgroups, bridge netfilter, nftables, xt_ADDRTYPE and devtmpfs all return to stock values, and the Droidspaces cgroup v1 patch in `kernel/cgroup/cgroup.c` is reverted. These match the shipping LineageOS 24 (A17) miatoll kernel; container runtimes will not run on this build
+• **CUBIC is now the only congestion control** — Vegas, Westwood+, BIC and HTCP are disabled (BBR went in #106), `DEFAULT_TCP_CONG` stays `cubic`, and `fq_codel`/`fq` remain compiled in for `tc` users
+• **CI follows all of it**: MGLRU/ram_tune/net_tune must be absent from both `.config` and the linked image, and the container + congestion symbols are hard-required to be off
+
 ## #106 — slim build: MGLRU, BBR, net_tune and SYSVIPC removed
 • **MGLRU is out** — `# CONFIG_LRU_GEN is not set`, so the kernel is back to the stock two-list LRU and the backport is no longer compiled into the image. The runtime knob `/sys/kernel/mm/lru_gen` no longer exists, and `mm/ram_tune.c` no longer feeds its `spread` value; every other tier value (swappiness, dirty ratios, kswapd reserve, page-cluster) is unchanged
 • **BBR is out** — `# CONFIG_TCP_CONG_BBR is not set`, and the default congestion control is back to the kernel's normal **CUBIC**. Vegas, Westwood+, BIC and HTCP stay selectable; the default can still be changed at runtime with `echo cubic > /proc/sys/net/ipv4/tcp_congestion_control`

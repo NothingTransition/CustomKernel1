@@ -157,7 +157,8 @@ jobs:
           require_config 'CONFIG_ANDROID_BINDER_DEVICES="binder,hwbinder,vndbinder"'
           require_config 'CONFIG_SECURITY_SELINUX_BOOTPARAM=y'
           require_config 'CONFIG_SECURITY_SELINUX_DEVELOP=y'
-          require_config 'CONFIG_USER_NS=y'
+          # #107: USER_NS went out with the Droidspaces fragment - it is
+          # asserted off in the container block below.
           require_config 'CONFIG_SECCOMP_FILTER=y'
           require_config 'CONFIG_DM_VERITY=y'
           require_config 'CONFIG_DM_DEFAULT_KEY=y'
@@ -170,18 +171,37 @@ jobs:
           require_config 'CONFIG_EXT4_ENCRYPTION=y'
           require_config 'CONFIG_FS_ENCRYPTION=y'
           require_config 'CONFIG_NETFILTER_XT_TARGET_TRACE=y'
-          # #106 slim pass: the custom network tuner is gone on purpose.
-          # Defaults are stock (CUBIC + pfifo_fast); fq_codel/fq remain
-          # compiled in and can be applied per-device with tc.
+          # #106/#107 slim pass: the custom network tuner is gone and CUBIC
+          # is the only congestion control left. Defaults are stock
+          # (CUBIC + pfifo_fast); fq_codel/fq remain compiled in for tc.
           require_config '# CONFIG_TCP_CONG_BBR is not set'
+          require_config '# CONFIG_TCP_CONG_BIC is not set'
+          require_config '# CONFIG_TCP_CONG_WESTWOOD is not set'
+          require_config '# CONFIG_TCP_CONG_HTCP is not set'
+          require_config '# CONFIG_TCP_CONG_VEGAS is not set'
           require_config 'CONFIG_DEFAULT_TCP_CONG="cubic"'
           require_config '# CONFIG_NET_SCH_DEFAULT is not set'
           require_config 'CONFIG_NET_SCH_FQ_CODEL=y'
-          # #106 slim pass: MGLRU is removed from the image on purpose
-          # (back to the stock two-list LRU), and the Droidspaces/container
-          # deviation (SYSVIPC) is dropped. Both must stay off/absent.
-          require_config '# CONFIG_LRU_GEN is not set'
+          # #107 slim pass: MGLRU is deleted from the source tree, so the
+          # LRU_GEN symbols no longer exist in Kconfig - olddefconfig emits
+          # no line for them. Any LRU_GEN text here means the revert did
+          # not land.
+          if grep -q 'LRU_GEN' out/.config; then
+            echo 'MGLRU must be gone from .config (#107)' >&2
+            exit 1
+          fi
+          # #106/#107: the Droidspaces/container fragment is gone entirely.
           require_config '# CONFIG_SYSVIPC is not set'
+          require_config '# CONFIG_POSIX_MQUEUE is not set'
+          require_config '# CONFIG_USER_NS is not set'
+          require_config '# CONFIG_PID_NS is not set'
+          require_config '# CONFIG_CGROUP_PIDS is not set'
+          require_config '# CONFIG_CGROUP_DEVICE is not set'
+          require_config '# CONFIG_CGROUP_NET_PRIO is not set'
+          require_config '# CONFIG_BRIDGE_NETFILTER is not set'
+          require_config '# CONFIG_NF_TABLES is not set'
+          require_config '# CONFIG_NETFILTER_XT_MATCH_ADDRTYPE is not set'
+          require_config '# CONFIG_DEVTMPFS is not set'
           require_config '# CONFIG_KPROBES is not set'
           require_config 'CONFIG_EROFS_FS=y'
           require_config 'CONFIG_EROFS_FS_ZIP=y'
@@ -265,16 +285,10 @@ jobs:
           grep -q ' susfs_add_sus_map$' vmlinux.sym
           grep -q ' nomount_init$' vmlinux.sym
 
-          # the RAM-tier tuning initcall must actually be in the image
-          grep -q ' ram_tune_init$' vmlinux.sym
-
-          # #106 slim pass: these must NOT be in the image any more.
-          if grep -q ' net_tune_init$' vmlinux.sym; then
-            echo 'net_tune must be removed (#106)' >&2
-            exit 1
-          fi
-          if grep -q ' lru_gen_set_state$' vmlinux.sym; then
-            echo 'MGLRU must be removed (#106)' >&2
+          # #107 slim pass: net_tune, the RAM-tier tuner and MGLRU are all
+          # gone from the source tree - none of their symbols may appear.
+          if grep -qE ' (net_tune|ram_tune|lru_gen)_' vmlinux.sym; then
+            echo 'net_tune/ram_tune/lru_gen must be removed (#107)' >&2
             exit 1
           fi
 
@@ -294,7 +308,7 @@ jobs:
             echo "toolchain.source=ubuntu-24.04-llvm"
             clang --version | head -n 1 | sed 's/^/clang.version=/'
             ld.lld --version | head -n 1 | sed 's/^/lld.version=/'
-            grep -E '(CONFIG_KSU|CONFIG_NOMOUNT|CONFIG_LRU_GEN|CONFIG_SYSVIPC|CONFIG_DEFAULT_TCP_CONG|CONFIG_NET_SCH_DEFAULT|CONFIG_EROFS_FS|CONFIG_NTFS_FS|CONFIG_BPF_SYSCALL|CONFIG_MODULE_SIG_FORCE)' out/.config || true
+            grep -E '(CONFIG_KSU|CONFIG_NOMOUNT|CONFIG_POSIX_MQUEUE|CONFIG_USER_NS|CONFIG_DEVTMPFS|CONFIG_SYSVIPC|CONFIG_DEFAULT_TCP_CONG|CONFIG_NET_SCH_DEFAULT|CONFIG_EROFS_FS|CONFIG_NTFS_FS|CONFIG_BPF_SYSCALL|CONFIG_MODULE_SIG_FORCE)' out/.config || true
           } | tee build-info.txt
 
       - name: Package AnyKernel3 flashable zip
