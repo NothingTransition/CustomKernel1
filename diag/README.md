@@ -35,3 +35,19 @@ su -c "dmesg | grep -iE 'hung|blocked for more|watchdog|oom|kill|stall|timeout|d
 `console-ramoops` holds the **previous** boot's kernel log, so a boot that hung
 and was force-rebooted leaves its console log there — that is the single most
 useful artifact for this bug.
+
+## Field results (2026-10-04) — parked
+
+- The ROM maintainer says Infinity X 4.0 is deliberately tight and, right now,
+  only the Imperial-X kernel boots it. That matches the field data: IX boots;
+  v108 and v109 intermittently stall at the boot animation; modules are not
+  involved.
+- `diet` **did boot** once — but after an OFRP cache clear, so the config is
+  not proven to be the cause (the wipe is a confound). It was reported "heavy"
+  to boot afterwards, which matches post-wipe ART dexopt on 4 GB, not the
+  kernel.
+- `memoff` / `hz100` / `vmoff` were never tested; the bisect is parked while
+  the ROM is this restrictive. If it ever loosens, flash `memoff` first (v109
+  with only the memory cgroup off). If that boots, the answer is a v109
+  equivalent with the jitter work kept and memcg off — nothing needs rebuilding
+  to run that test.

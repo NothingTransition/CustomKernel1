@@ -15,16 +15,14 @@ name: Miatoll DIAG builds (not releases)
 #   memoff  - memory cgroup off only
 #   vmoff   - mm/ram_tune.c + net/net_tune.c initcalls not run
 #
-# Trigger: push touching this file or diag/**.
+# Parked (2026-10-04): Infinity X 4.0 is deliberately restrictive and currently
+# only lets the Imperial-X kernel boot it, so this bisect is on hold. Manual
+# trigger only - it no longer builds on every push. The four kernels and the
+# protocol in diag/README.md stay ready for when the ROM loosens, or for
+# another ROM.
 
 on:
-  push:
-    branches:
-      - arena/01a0bfbb-customkernel1
-      - arena/01a1039d-customkernel1
-    paths:
-      - ".github/workflows/diag-miatoll.yml"
-      - "diag/**"
+  workflow_dispatch:
 
 permissions:
   contents: write

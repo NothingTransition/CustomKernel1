@@ -15,7 +15,7 @@ One zip for all four — it ships its own DTB and DTBO.
 
 ## Features
 
-- KernelSU v3.3.0-52 built in (manager APK in the release)
+- KernelSU v3.3.0-55 built in (manager APK in the release)
 - SUSFS v2.3.0 + NoMount v2.0.0 hiding stack, BRENE module bundled
 - CFQ I/O scheduler (BFQ compiled in and selectable per disk) and TCP BBR by default
 - MGLRU backport stays in-tree but compiled out since #109 — it was never active, and CI keeps it out
@@ -27,6 +27,19 @@ One zip for all four — it ships its own DTB and DTBO.
 ## Flash
 
 Flash the release zip in recovery, reboot, install the manager APK. Done.
+
+## Releases & tags
+
+| Stream | Tag | What it is |
+|---|---|---|
+| Stable | `stormbreaker-v<N>` | One release per CI run, tagged with the run number; the zip inside is `Stormbreaker-miatoll-KSU-SUSFS-NoMount-<N>.zip`. The newest is badged **Latest**; every release carries the same companions (both manager APKs, BRENE, NoMount). |
+| Diagnostic | `diag-<N>` (**pre-release**) | Experimental bisect/test kernels (see `diag/README.md`). Never for daily use. |
+| Known-good | `stormbreaker-v108` | The v105 tree. If a newer build misbehaves on a strict ROM, flash this. |
+
+Boot status on **Infinity X 4.0 (A17)**: `v108` boots; `v109` is the newest
+build, but that ROM currently only lets the Imperial-X kernel boot it — the
+bisect for that is parked (see `diag/README.md`). The stack is field-tested
+working on Evolution X A17.
 
 ## Credits
 
