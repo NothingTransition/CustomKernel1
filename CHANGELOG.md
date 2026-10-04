@@ -3,6 +3,15 @@
 Full feature documentation lives in RELEASE_NOTES.md (repo). This file is
 what gets attached to each release: only what changed in that build.
 
+## #106 — slim build: MGLRU, BBR, net_tune and SYSVIPC removed
+• **MGLRU is out** — `# CONFIG_LRU_GEN is not set`, so the kernel is back to the stock two-list LRU and the backport is no longer compiled into the image. The runtime knob `/sys/kernel/mm/lru_gen` no longer exists, and `mm/ram_tune.c` no longer feeds its `spread` value; every other tier value (swappiness, dirty ratios, kswapd reserve, page-cluster) is unchanged
+• **BBR is out** — `# CONFIG_TCP_CONG_BBR is not set`, and the default congestion control is back to the kernel's normal **CUBIC**. Vegas, Westwood+, BIC and HTCP stay selectable; the default can still be changed at runtime with `echo cubic > /proc/sys/net/ipv4/tcp_congestion_control`
+• **`net/net_tune.c` is deleted** and the forced `fq_codel` default qdisc is reverted (`# CONFIG_NET_SCH_DEFAULT is not set` → stock `pfifo_fast`), so the two boot-time TCP overrides (`tcp_slow_start_after_idle=0`, `tcp_mtu_probing=1`) are gone with it. `fq_codel`/`fq` stay compiled in for `tc` users, and both TCP knobs remain ordinary sysctls a ROM or root can set at runtime
+• **SYSVIPC removed** — the Droidspaces/container deviation is dropped and the AOSP default is back (`# CONFIG_SYSVIPC is not set`). SysV-IPC containers will not run on this build; the rest of the container fragment (namespaces, POSIX mqueue, devtmpfs, cgroups, nftables) is untouched and can be revisited on request
+• **Docs pruned** — `Documentation/vm/multigen_lru.rst` and its index entry are gone with the feature, and the dangling reference from the LRU_GEN Kconfig help was removed
+• **CI follows the change**: the removed symbols are hard-required to be off/absent in the generated `.config`, and the linked-symbol check was inverted — the image must NOT contain `lru_gen_set_state` or `net_tune_init`
+• **Unchanged**: KernelSU + SUSFS + NoMount + BRENE, the A17 eBPF configuration, EROFS/NTFS/F2FS, BFQ, and the RAM-tier VM tuning (minus the MGLRU value)
+
 ## #105 — network tuning: fq_codel default qdisc + TCP defaults for cellular
 • BBR was already the default congestion control here; the missing half was the queue. The default qdisc was `pfifo_fast`, which just fills up — upload anything and RTT balloons, so the connection *feels* slow even at a good Speedtest number. `fq_codel` is now the default qdisc (`CONFIG_NET_SCH_DEFAULT=y` + `CONFIG_DEFAULT_FQ_CODEL=y`, applied by the kernel's own `sch_default_qdisc()` at boot), so the queue is actually managed and one flow cannot starve the rest
 • New `net/net_tune.c` (late_initcall, same pattern as `mm/ram_tune.c`) sets two TCP defaults: `tcp_slow_start_after_idle=0` — the congestion window is no longer reset after an idle period, so a resumed transfer does not start over from scratch — and `tcp_mtu_probing=1`, which survives carriers that drop ICMP "fragmentation needed" and otherwise hang on large packets. Both stay normal sysctls, so ROM init scripts and root can override them at runtime

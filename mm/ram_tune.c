@@ -12,9 +12,8 @@
  * but before userspace starts, so:
  *   - the values below become the effective boot defaults, and
  *   - ROM init scripts / root can still override anything at runtime, because
- *     every knob here is a normal /proc/sys/vm/... sysctl (and the MGLRU one is
- *     /sys/kernel/mm/lru_gen/spread). This tunes defaults, it does not lock
- *     anything down.
+ *     every knob here is a normal /proc/sys/vm/... sysctl. This tunes
+ *     defaults, it does not lock anything down.
  *
  * Note the RAM we see is *usable* RAM, not the marketing number: a "4 GB"
  * miatoll reports roughly 3.5-3.8 GB, a "6 GB" roughly 5.5-5.8 GB. The tier
@@ -28,11 +27,6 @@
 #include <linux/writeback.h>
 #include <linux/dcache.h>
 
-#ifdef CONFIG_LRU_GEN
-/* mm/vmscan.c - how eagerly the multigenerational LRU ages generations. */
-extern int lru_gen_spread;
-#endif
-
 struct ram_tier {
 	const char *name;
 	unsigned long max_pages;	/* inclusive ceiling, in pages */
@@ -42,7 +36,6 @@ struct ram_tier {
 	int dirty_background_ratio;
 	int watermark_scale_factor;
 	int page_cluster;
-	int lru_gen_spread;
 };
 
 /*
@@ -86,12 +79,6 @@ struct ram_tier {
  * page_cluster=0        Swap readahead of 2^3 pages (the 4.14 default for our
  *                       RAM size) is a disk optimisation. zram is random access
  *                       with no seek penalty, so readahead there is pure waste.
- *
- * lru_gen_spread        Only matters when MGLRU is enabled. It is the ratio of
- *                       old to young pages that makes the walker skip a round
- *                       of aging. Smaller = age more often = reclaim cold pages
- *                       sooner, which is what a 4 GB device wants; larger = let
- *                       things settle, which suits 8 GB.
  */
 static const struct ram_tier ram_tiers[] = {
 	{ /* ~4 GB installed (~3.5-3.8 GB usable) */
@@ -103,7 +90,6 @@ static const struct ram_tier ram_tiers[] = {
 		.dirty_background_ratio	= 5,
 		.watermark_scale_factor	= 100,
 		.page_cluster		= 0,
-		.lru_gen_spread		= 0,
 	},
 	{ /* ~6 GB installed (~5.5-5.8 GB usable) */
 		.name			= "6gb",
@@ -114,7 +100,6 @@ static const struct ram_tier ram_tiers[] = {
 		.dirty_background_ratio	= 5,
 		.watermark_scale_factor	= 75,
 		.page_cluster		= 0,
-		.lru_gen_spread		= 1,
 	},
 	{ /* 8 GB and up: kernel defaults are already appropriate */
 		.name			= "8gb+",
@@ -125,7 +110,6 @@ static const struct ram_tier ram_tiers[] = {
 		.dirty_background_ratio	= 10,
 		.watermark_scale_factor	= 50,
 		.page_cluster		= 0,
-		.lru_gen_spread		= 2,
 	},
 };
 
@@ -163,11 +147,6 @@ static int __init ram_tune_init(void)
 		watermark_scale_factor = tier->watermark_scale_factor;
 		setup_per_zone_wmarks();
 	}
-
-#ifdef CONFIG_LRU_GEN
-	/* kswapd is already running, hence the WRITE_ONCE (it uses READ_ONCE). */
-	WRITE_ONCE(lru_gen_spread, tier->lru_gen_spread);
-#endif
 
 	pr_info("ram_tune: %s tier for %lu MB RAM: swappiness=%d vfs_cache_pressure=%d dirty=%d/%d watermark_scale_factor=%d page_cluster=%d\n",
 		tier->name, mb, tier->swappiness, tier->vfs_cache_pressure,
