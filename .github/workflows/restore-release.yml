@@ -1,0 +1,83 @@
+name: Stormbreaker — restore a pruned release from CI artifacts
+
+# One-shot recovery tool. GitHub keeps every build's artifact for 90 days, so a
+# release that was pruned by hand can be recreated from the exact artifact its
+# CI run uploaded - no rebuild, byte-identical zip. CI has the network access
+# for artifact download and asset upload that the dev sandbox does not.
+#
+# Used on 2026-10-04 to bring back stormbreaker-v93 (pruned during the #110
+# releases cleanup): run #93 = 37125698258, artifact miatoll-kernel-93,
+# commit d62bca985.
+#
+# Trigger: push touching this file or restore/**, or manual dispatch.
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - arena/01a0bfbb-customkernel1
+      - arena/01a1039d-customkernel1
+    paths:
+      - ".github/workflows/restore-release.yml"
+      - "restore/**"
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  restore:
+    name: Restore stormbreaker-v93 from its artifact
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download the original #93 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: miatoll-kernel-93
+          run-id: 37125698258
+          github-token: ${{ github.token }}
+          path: a93
+
+      - name: Locate the flashable zip
+        shell: bash
+        run: |
+          set -euo pipefail
+          find a93 -type f | sort
+          Z=$(find a93 -type f -name 'Stormbreaker-miatoll-*.zip' | head -1)
+          test -n "$Z"
+          cp "$Z" ./Stormbreaker-miatoll-KSU-SUSFS-NoMount-93.zip
+          ls -la Stormbreaker-miatoll-KSU-SUSFS-NoMount-93.zip
+
+      - name: Recreate the stormbreaker-v93 release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha=$(sha256sum Stormbreaker-miatoll-KSU-SUSFS-NoMount-93.zip | cut -d' ' -f1)
+          {
+            echo "## Stormbreaker v93 — original build, restored"
+            echo
+            echo "The exact zip from CI run #93 (\`37125698258\`, commit \`d62bca985\`, 2026-10-03) — recovered from that run's artifact, not rebuilt."
+            echo
+            echo "- Zip SHA-256: \`$sha\`"
+            echo "- Original build subject: \"manager APK: backslashxx v3.3.0-52 -> v3.3.0-54 (versionCode 32655)\""
+            echo "- Restored on request — the #110 releases cleanup had pruned it."
+            echo "- Manager APKs and the companion modules (BRENE, NoMount) live on the current releases; they are userspace and independent of this kernel build."
+            echo "- Historical build: for daily use take the newest \`stormbreaker-v*\` (or \`stormbreaker-v108\` on Infinity X 4.0)."
+          } > notes.md
+          cat notes.md
+
+          TAG=stormbreaker-v93
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release delete "$TAG" --yes --cleanup-tag
+          fi
+          gh release create "$TAG" \
+            --target d62bca985c13de0a6041b9d81d817cadfb3fed55 \
+            --latest=false \
+            --title "Stormbreaker v93 — restored original build" \
+            --notes-file notes.md \
+            Stormbreaker-miatoll-KSU-SUSFS-NoMount-93.zip
+
+          gh release view "$TAG" --json url,assets \
+            --jq '.url, (.assets[] | "  \(.name) \(.size) bytes")'
