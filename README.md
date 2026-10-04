@@ -15,14 +15,36 @@ One zip for all four — it ships its own DTB and DTBO.
 
 ## Features
 
-- KernelSU v3.3.0-55 built in (manager APK in the release)
-- SUSFS v2.3.0 + NoMount v2.0.0 hiding stack, BRENE module bundled
-- CFQ I/O scheduler (BFQ compiled in and selectable per disk) and TCP BBR by default
-- MGLRU backport stays in-tree but compiled out since #109 — it was never active, and CI keeps it out
-- Memory tuned to installed RAM — 4/6/8 GB profiles applied at boot (kswapd reserve via `extra_free_kbytes`, so ROM post_boot cannot erase it; swappiness, cache pressure, dirty limits, swapin readahead)
-- ext4, F2FS (compression + encryption), EROFS, exFAT, NTFS
-- Android 13–17 support — **A17 tested and working on Evolution X**; full ACK eBPF backport compiled in (ring buffer, in-kernel BTF, iterators, trampolines, **BPF LSM**) — sockmap/sk_msg stays off because that part of the backport does not compile here; see RELEASE_NOTES for the A16/A17 compatibility audit
-- **Network tuning for mobile data** — BBR congestion control and `fq_codel` (no bufferbloat) as defaults, plus TCP defaults that survive idle periods and broken path-MTU discovery; all runtime-overridable. WiFi guidance (the ROM's `WCNSS_qcom_cfg.ini`) in RELEASE_NOTES
+### Root & hiding
+- **KernelSU** built in — driver vendored from backslashxx/KernelSU `v3.3.0-52` (`KSU_VERSION 32651`); no kprobes, no daemon, no `/su` binary
+- Manager APKs attached to every release: **KernelSU `v3.3.0-55`** and **KernelSU-Next `v3.4.0`** (the kernel accepts either manager's signature)
+- **SUSFS v2.3.0** — sus_path, sus_mount, sus_kstat, sus_map, spoof uname / cmdline+bootconfig, open_redirect, AVC log spoofing, KSU/SUSFS symbol hiding
+- **NoMount v2.0.0** — per-app directory hiding via keyring rules
+- **BRENE v0.0.68** module bundled — SUSFS rules control panel
+
+### Memory
+- **RAM-tier auto-tuning** — 4/6/8 GB profiles applied at boot (kswapd reserve via `extra_free_kbytes`, so ROM post_boot cannot erase it; swappiness, cache pressure, dirty limits, swapin readahead). Every value stays a runtime-overridable sysctl
+- **zram** — lz4 and zstd compressors selectable at runtime, dedup built in
+- MGLRU backport stays in-tree but **compiled out since #109** — it was never active, and CI keeps it out
+
+### Storage & I/O
+- **CFQ** I/O scheduler default; **BFQ** (with per-app cgroup support), deadline and kyber still selectable per disk
+- **BLK_WBT** writeback throttling (sq + mq) — smooths background writes so foreground stays responsive
+- ext4 (+ FBE), **F2FS** (compression LZO/LZ4/ZSTD + encryption + security labels), **EROFS** (+ ZIP), exFAT, NTFS (read/write), VFAT — plus dm-verity, FBE, quotas and incremental-fs for Android
+
+### CPU & scheduling
+- Qualcomm **WALT** (`SCHED_WALT`) with `SCHED_TUNE` and `core_ctl`; schedutil governor built in
+- **cpu-boost** defaults to a 1.8 GHz input boost on all cores, so the UI responds even on ROMs that never configure it
+- HZ 300 for finer UI scheduling; PSI for modern Android
+
+### Networking
+- **BBR** default congestion control (Vegas/Westwood+/BIC/HTCP also built in) and **fq_codel** default qdisc — no bufferbloat under load
+- TCP defaults that survive idle periods and broken path-MTU discovery — all runtime-overridable; WiFi guidance (the ROM's `WCNSS_qcom_cfg.ini`) in RELEASE_NOTES
+
+### Android
+- **Android 13–17** — A17 tested on Evolution X; full ACK eBPF backport + **BPF LSM** (ring buffer, in-kernel BTF, iterators, trampolines); sockmap/sk_msg stays off because that part of the backport does not compile here — see RELEASE_NOTES for the A16/A17 compatibility audit
+- Binder (`binder,hwbinder,vndbinder`), SELinux (enforcing, `checkreqprot=0`, bootparam), seccomp filter, KASLR, STRICT_KERNEL_RWX, INIT_ON_ALLOC, hardened usercopy
+- **LZ4 ramdisk**, boot header v2, **A-only** device — one zip for curtana / excalibur / gram / joyeuse (own DTB + DTBO)
 
 ## Flash
 

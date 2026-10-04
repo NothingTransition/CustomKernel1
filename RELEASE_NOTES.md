@@ -6,7 +6,7 @@ Linux 4.14.357-openela · built with Clang/LLVM 18 · A-only flash
 
 ### Root & control
 - KernelSU v3.3.0-52 — built-in, supercall-based (no kprobes, no daemon, no /su binary)
-- KernelSU manager app bundled with the release, pinned to v3.3.0-52 (upstream pairing: kernel 32651, manager APK 32653)
+- KernelSU manager apps bundled with the release: **KernelSU v3.3.0-55** and **KernelSU-Next v3.4.0** — the kernel driver stays `v3.3.0-52` (`KSU_VERSION 32651`); upstream deleted the older manager releases, so the pin tracks the newest resolvable tag
 
 ### Hiding stack
 - **SUSFS v2.3.0** — full feature set:
