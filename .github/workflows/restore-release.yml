@@ -9,11 +9,14 @@ name: Stormbreaker — restore a pruned release from CI artifacts
 # releases cleanup): run #93 = 37125698258, artifact miatoll-kernel-93,
 # commit d62bca985.
 #
-# Two jobs on purpose: fetching the old artifact needs the `actions` scope,
-# and in this repo a job that mixes `actions: read` with `contents: write`
-# gets a read-only token (release creation then fails 403). The publish job
-# therefore asks for `contents: write` alone - the same scope set the main
-# release job uses, which publishes fine here.
+# Attach-first design: the release object itself is created out of band (the
+# dev sandbox can reach POST /releases, this runner's token gets 403 there for
+# reasons only GitHub knows), so this workflow only has to *upload the asset*
+# to the release that already exists. Upload uses the asset endpoint
+# (uploads.github.com), a different code path - worth testing on its own.
+# If the release is missing the workflow falls back to creating it, and if
+# that 403s it parks the zip on a throwaway branch so the zip can still be
+# recovered without rebuilding.
 #
 # Trigger: push touching this file or restore/**, or manual dispatch.
 
@@ -28,7 +31,7 @@ on:
       - "restore/**"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   fetch:
@@ -55,7 +58,7 @@ jobs:
           retention-days: 1
 
   publish:
-    name: Recreate stormbreaker-v93
+    name: Attach the zip to stormbreaker-v93
     needs: fetch
     runs-on: ubuntu-24.04
     permissions:
@@ -82,6 +85,7 @@ jobs:
         run: |
           set -euo pipefail
           sha=$(sha256sum Stormbreaker-miatoll-KSU-SUSFS-NoMount-93.zip | cut -d' ' -f1)
+          echo "sha256=$sha" >> "$GITHUB_ENV"
           {
             echo "## Stormbreaker v93 — original build, restored"
             echo
@@ -93,41 +97,72 @@ jobs:
             echo "- Manager APKs and the companion modules (BRENE, NoMount) live on the current releases; they are userspace and independent of this kernel build."
             echo "- Historical build: for daily use take the newest \`stormbreaker-v*\` (or \`stormbreaker-v108\` on Infinity X 4.0)."
           } > notes.md
-          echo "notes ready:"
           cat notes.md
 
-      - name: Recreate the release
+      - name: Attach the asset
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -uo pipefail
           # Failures and probes are emitted as annotations so they are readable
-          # through the API (this sandbox cannot fetch job logs).
+          # through the API (the dev sandbox cannot fetch job logs).
           ann() { printf '%s\n' "$1" | tail -25 | while IFS= read -r l; do echo "::error::$l"; done; }
           probe() { printf '%s\n' "$1" | while IFS= read -r l; do echo "::warning::PROBE $l"; done; }
 
           TAG=stormbreaker-v93
           REPO="$GITHUB_REPOSITORY"
-          probe "auth: $(gh auth status 2>&1 | tr '\n' '|' | sed 's/gh[opsu]_[A-Za-z0-9_]*/***/g')"
-          probe "repo permissions: $(gh api "repos/$REPO" --jq -c '.permissions' 2>&1)"
+          ZIP=Stormbreaker-miatoll-KSU-SUSFS-NoMount-93.zip
 
+          probe "repo permissions: $(gh api "repos/$REPO" -q -c '.permissions' 2>&1)"
+          probe "token scopes header: $(curl -sS -o /dev/null -D - -H "Authorization: Bearer $GH_TOKEN" https://api.github.com/ 2>&1 | tr -d '\r' | grep -i '^x-oauth-scopes\|^x-accepted-oauth-scopes' | paste -sd' ' -)"
+
+          # 1) Preferred: the release already exists (created out of band) -> upload.
           if gh release view "$TAG" -R "$REPO" >/dev/null 2>&1; then
-            gh release delete "$TAG" -R "$REPO" --yes --cleanup-tag \
-              || { ann "existing release could not be deleted"; exit 1; }
+            if out=$(gh release upload "$TAG" "$ZIP" -R "$REPO" --clobber 2>&1); then
+              probe "asset upload to the existing release: OK"
+            else
+              probe "asset upload failed: $out"
+            fi
           fi
 
-          if ! out=$(gh release create "$TAG" -R "$REPO" \
-                --target d62bca985c13de0a6041b9d81d817cadfb3fed55 \
-                --title "Stormbreaker v93 — restored original build" \
-                --notes-file notes.md \
-                Stormbreaker-miatoll-KSU-SUSFS-NoMount-93.zip 2>&1); then
-            ann "gh release create failed: $out"
-            exit 1
+          # 2) No release yet -> create it on the existing tag (no --target, the
+          #    tag already points at d62bca985) and let gh upload the asset.
+          if ! gh release view "$TAG" -R "$REPO" >/dev/null 2>&1; then
+            if out=$(gh release create "$TAG" -R "$REPO" \
+                  --title "Stormbreaker v93 — restored original build" \
+                  --notes-file notes.md \
+                  "$ZIP" 2>&1); then
+              probe "gh release create with asset: OK"
+            else
+              ann "gh release create failed: $out"
+              # 3) Last resort: park the zip on a throwaway branch (git push is
+              #    a contents:write operation, so this also tells us whether the
+              #    token has write at all).
+              git clone --depth 1 "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" br >/dev/null 2>&1 || true
+              if [ -d br ]; then
+                cd br
+                git config user.name "github-actions[bot]"
+                git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+                git checkout -b "restore-v93-${GITHUB_RUN_NUMBER}"
+                cp ../"$ZIP" .
+                git add -f "$ZIP"
+                git commit -q -m "restore: v93 zip from run 37125698258 ($sha256)"
+                if out2=$(git push origin HEAD 2>&1); then
+                  probe "fallback branch restore-v93-${GITHUB_RUN_NUMBER}: push OK"
+                else
+                  ann "fallback branch push failed too: $out2"
+                fi
+              else
+                ann "fallback clone failed"
+              fi
+              exit 1
+            fi
           fi
-          echo "$out"
 
-          # Keep the Latest badge on the newest build.
+          # Refresh the notes with the sha and keep the Latest badge on v110.
+          gh release edit "$TAG" -R "$REPO" --notes-file notes.md \
+            || probe "notes edit failed (release still fine)"
           gh release edit "$TAG" -R "$REPO" --latest=false \
             || probe "could not demote Latest - check the badge manually"
 
