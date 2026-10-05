@@ -5,9 +5,10 @@ Linux 4.14.357-openela · built with Clang/LLVM 18 · A-only flash
 ## Features
 
 ### Root & control
-- KernelSU v3.3.0-60 — built-in, supercall-based (no kprobes, no daemon, no /su binary); `KSU_VERSION 32657` (ABI unchanged from -56)
-- **Only the backslashxx/KernelSU manager family is accepted.** Two certificates are trusted: backslashxx release managers (public dummy.keystore, package-locked to `me.weishu.kernelsu`) and self-built managers signed with the official KernelSU certificate (`c371061b…`). Fork managers (KernelSU-Next, KOWX712, …) are deliberately rejected
-- Manager APK bundled with the release: **KernelSU v3.3.0-60** (`KernelSU-manager.apk`; the immutable -56 copy on our v111 release is the fallback)
+- **BakaSU v4.2.0-rc3** (formerly ReSukiSU) — built-in, supercall-based (no kprobes, no daemon, no /su binary); `KSU_VERSION 35171`, the same version code the shipped manager reports
+- **SUSFS inline-hook mode.** Tracepoint hooks are GKI 2.0 (5.10+) only and the plain manual hook carries no SUSFS, so the driver runs in its SUSFS inline-hook mode against the v2.3.0 kernel side. All seven hook sites it requires are in the tree and are verified by the driver's own `inline_hook_check.mk` during the build
+- **Only the BakaSU manager family is accepted.** Two certificates are trusted: BakaSU/ReSukiSU (`0x377`, `d3469712…`) and the official KernelSU certificate (`c371061b…`). The fork certificates the driver knows about (5ec1cff, rsuntk, SukiSU-Ultra, KOWX712) are deliberately rejected — `CONFIG_KSU_MULTI_MANAGER_SUPPORT` is off
+- Manager APK bundled with the release: **BakaSU v4.2.0-rc3** (`BakaSU-manager.apk`, the universal `ReSukiSU_v4.2.0-rc3_35171` build)
 
 ### Hiding stack
 - **SUSFS v2.3.0** — full feature set:
@@ -136,7 +137,7 @@ Editing the ini needs root and a rewrite of `/vendor` (Magisk module or overlay 
 | File | What it is |
 |---|---|
 | `Stormbreaker-miatoll-KSU-SUSFS-NoMount-*.zip` | Flashable AnyKernel3 zip — kernel + Stormbreaker DTB + DTBO (all four miatoll devices) |
-| `KernelSU-manager.apk` | KernelSU manager app v3.3.0-60 — install **after** flashing + booting |
+| `BakaSU-manager.apk` | BakaSU manager app v4.2.0-rc3 (`KSU_VERSION 35171`) — install **after** flashing + booting |
 | `BRENE-v0.0.68.zip` | SUSFS rules module — install inside the KSU manager, then reboot |
 | `NoMount-v2.0.0.zip` | NoMount module — install inside the KSU manager, then reboot |
 
@@ -144,5 +145,5 @@ Editing the ini needs root and a rewrite of `/vendor` (Magisk module or overlay 
 
 1. Flash the zip from recovery (TWRP/OrangeFox) — works on any miatoll device (curtana / excalibur / gram / joyeuse).
 2. Boot the ROM.
-3. Install `KernelSU-manager.apk`.
+3. Install `BakaSU-manager.apk`.
 4. In the manager: install the BRENE and NoMount modules, then reboot.

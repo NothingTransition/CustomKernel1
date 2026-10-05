@@ -5209,19 +5209,28 @@ CONFIG_ESOC_MDM_DBG_ENG=y
 #
 # KernelSU
 #
+#
+# KernelSU — BakaSU driver v4.2.0-rc3 (see drivers/kernelsu/UPSTREAM.md)
+#
 CONFIG_KSU=y
-# CONFIG_KSU_HACK_ARM64_BRANCH_LINK is not set
-# CONFIG_KSU_TAMPER_SYSCALL_TABLE is not set
-CONFIG_KSU_LSM_SECURITY_HOOKS=y
-CONFIG_KSU_FEATURE_SULOG=y
-CONFIG_KSU_FEATURE_ADBROOT=y
-# CONFIG_KSU_HOSTSREDIRECT is not set
-# CONFIG_KSU_ENABLE_FULL_UID_CHECKS is not set
-# CONFIG_KSU_THRONE_TRACKER_ALWAYS_THREADED is not set
-# CONFIG_KSU_NOPRINTK is not set
-# CONFIG_KSU_SHELL_HAS_SU_ALWAYS is not set
 # CONFIG_KSU_DEBUG is not set
-CONFIG_KSU_HEURISTIC_IN_TREE_BUILD=y
+# CONFIG_KSU_TOOLKIT_SUPPORT is not set
+# CONFIG_KSU_DISABLE_MANAGER is not set
+# CONFIG_KSU_DISABLE_POLICY is not set
+#
+# Multi-manager support stays OFF: the driver then accepts exactly two
+# manager certificates — BakaSU/ReSukiSU and the official KernelSU one.
+# Turning it on would additionally accept 5ec1cff, rsuntk, SukiSU-Ultra and
+# KOWX712 managers, which this tree deliberately does not.
+#
+# CONFIG_KSU_MULTI_MANAGER_SUPPORT is not set
+#
+# Hook method: "SUSFS Inline Hook". The tracepoint hook is GKI 2.0 (5.10+)
+# only and the plain manual hook carries no SUSFS support, so this is the
+# mode that pairs the driver with the v2.3.0 SUSFS kernel side in this tree.
+# Every hook site it requires is verified at build time by
+# drivers/kernelsu/tools/inline_hook_check.mk.
+#
 CONFIG_KSU_SUSFS=y
 CONFIG_KSU_SUSFS_SUS_PATH=y
 CONFIG_KSU_SUSFS_SUS_MOUNT=y

@@ -6,6 +6,7 @@ on:
     branches:
       - arena/01a0bfbb-customkernel1
       - arena/01a1039d-customkernel1
+      - arena/3bc926b5-customkernel1
     paths:
       - ".github/workflows/build-miatoll.yml"
       - "AnyKernel3/**"
@@ -126,15 +127,20 @@ jobs:
             }
           }
 
+          # KernelSU: BakaSU driver v4.2.0-rc3, SUSFS inline-hook mode. The
+          # hook sites this mode needs are checked by the driver's own
+          # inline_hook_check.mk during the build; these assertions pin the
+          # configuration it was integrated against.
           require_config 'CONFIG_KSU=y'
-          if grep -q '^CONFIG_KSU_KPROBES_KSUD=y' out/.config; then
-            echo 'Kprobe hooks must remain disabled for manual integration' >&2
-            exit 1
-          fi
-          require_config '# CONFIG_KSU_HACK_ARM64_BRANCH_LINK is not set'
-          require_config '# CONFIG_KSU_TAMPER_SYSCALL_TABLE is not set'
-          require_config 'CONFIG_KSU_LSM_SECURITY_HOOKS=y'
           require_config 'CONFIG_KSU_SUSFS=y'
+          require_config '# CONFIG_KSU_TRACEPOINT_HOOK is not set'
+          require_config '# CONFIG_KSU_MANUAL_HOOK is not set'
+          # Manager policy: BakaSU/ReSukiSU + official KernelSU only. Turning
+          # multi-manager support on would also accept the 5ec1cff, rsuntk,
+          # SukiSU-Ultra and KOWX712 fork managers.
+          require_config '# CONFIG_KSU_MULTI_MANAGER_SUPPORT is not set'
+          require_config '# CONFIG_KSU_DISABLE_MANAGER is not set'
+          require_config '# CONFIG_KSU_DISABLE_POLICY is not set'
           require_config 'CONFIG_KSU_SUSFS_SUS_PATH=y'
           require_config 'CONFIG_KSU_SUSFS_SUS_MOUNT=y'
           require_config 'CONFIG_KSU_SUSFS_SUS_KSTAT=y'
@@ -142,6 +148,9 @@ jobs:
           require_config 'CONFIG_KSU_SUSFS_SPOOF_UNAME=y'
           require_config 'CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y'
           require_config 'CONFIG_KSU_SUSFS_OPEN_REDIRECT=y'
+          require_config 'CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y'
+          # SUSFS kernel side needs a built-in FUSE (get_fuse_inode()).
+          require_config 'CONFIG_FUSE_FS=y'
           require_config 'CONFIG_NOMOUNT=y'
           # The eBPF backport is in this tree and BPF_SYSCALL/JIT stay on, but
           # BPF LSM is off in the v93 lineage this release is based on.
@@ -263,7 +272,7 @@ jobs:
           test -s out/arch/arm64/boot/dtb.img
           test -s out/arch/arm64/boot/dtbo.img
           test -s out/arch/arm64/boot/dts/qcom/curtana-atoll-ab-idp-overlay.dtbo
-          test -s out/drivers/kernelsu/ksu.o
+          test -s out/drivers/kernelsu/kernelsu.o
           test -s out/fs/susfs.o
           test -s out/fs/nomount/nomount.o
 
@@ -273,6 +282,12 @@ jobs:
           grep -q ' ksu_handle_execveat$' vmlinux.sym
           grep -q ' ksu_handle_sys_reboot$' vmlinux.sym
           grep -q ' kernelsu_init$' vmlinux.sym
+          grep -q ' kernelsu_init_early$' vmlinux.sym
+          # The three hook sites added for the SUSFS inline-hook mode: if any
+          # of these is not linked, sucompat/su-hiding is silently degraded.
+          grep -q ' ksu_handle_setresuid$' vmlinux.sym
+          grep -q ' ksu_handle_sys_read$' vmlinux.sym
+          grep -q ' ksu_handle_input_handle_event$' vmlinux.sym
           grep -q ' susfs_init$' vmlinux.sym
           grep -q ' susfs_add_sus_map$' vmlinux.sym
           grep -q ' nomount_init$' vmlinux.sym
@@ -354,24 +369,26 @@ jobs:
           from_ours() { gh release download stormbreaker-v111 \
             -R "$GITHUB_REPOSITORY" -p "$1" -D release-assets --clobber; }
 
-          # Manager APK: the fresh upstream release first (matches the
-          # v3.3.0-60 driver source), then older upstream tags, then the
-          # immutable -56 build on our own v111 release (same 32657 ABI).
+          # Manager APK: pinned to the BakaSU release the vendored driver
+          # comes from. The version code in the asset name (35171) is the
+          # same KSU_VERSION the driver reports, so manager and kernel agree
+          # on the ABI. Our own release keeps an immutable copy as fallback,
+          # so upstream asset churn cannot break a build.
           got_manager=0
-          for tag in v3.3.0-60 v3.3.0-55; do
-            if gh release download "$tag" -R backslashxx/KernelSU \
-                 -p 'KernelSU_v3.3.0-*_*-release.apk' -D release-assets \
-                 --clobber; then
-              mv release-assets/KernelSU_v3.3.0-*_*-release.apk \
-                 release-assets/KernelSU-manager.apk
-              echo "manager APK: from backslashxx/KernelSU $tag"
+          for tag in v4.2.0-rc3; do
+            if gh release download "$tag" -R Baka-SU/BakaSU \
+                 -p 'ReSukiSU_v4.2.0-rc3_35171-universal-release.apk' \
+                 -D release-assets --clobber; then
+              mv release-assets/ReSukiSU_v4.2.0-rc3_35171-universal-release.apk \
+                 release-assets/BakaSU-manager.apk
+              echo "manager APK: from Baka-SU/BakaSU $tag"
               got_manager=1
               break
             fi
           done
           if [ "$got_manager" -eq 0 ]; then
-            from_ours 'KernelSU-manager.apk'
-            echo "manager APK: from stormbreaker-v111 (v3.3.0-56 build)"
+            from_ours 'BakaSU-manager.apk'
+            echo "manager APK: pinned copy from an earlier release"
           fi
 
           if from_ours 'BRENE-v0.0.68.zip'; then
@@ -390,7 +407,7 @@ jobs:
                release-assets/NoMount-v2.0.0.zip
           fi
           # sanity: the manager APK and modules must be zip/apk archives
-          head -c2 release-assets/KernelSU-manager.apk | grep -q PK
+          head -c2 release-assets/BakaSU-manager.apk | grep -q PK
           head -c2 release-assets/BRENE-v0.0.68.zip | grep -q PK
           head -c2 release-assets/NoMount-v2.0.0.zip | grep -q PK
           ls -la release-assets/
@@ -426,7 +443,7 @@ jobs:
             --title "Stormbreaker Kernel miatoll v${GITHUB_RUN_NUMBER}" \
             --notes-file release-notes.md \
             release-assets/Stormbreaker-miatoll-*.zip \
-            release-assets/KernelSU-manager.apk \
+            release-assets/BakaSU-manager.apk \
             release-assets/BRENE-v0.0.68.zip \
             release-assets/NoMount-v2.0.0.zip
           gh release view "$TAG" --json url --jq '.url'

@@ -30,6 +30,9 @@
 #include <linux/stat.h>
 #include <linux/fcntl.h>
 #include <linux/swap.h>
+#ifdef CONFIG_KSU_SUSFS
+#include <linux/susfs_def.h>
+#endif
 #include <linux/string.h>
 #include <linux/init.h>
 #include <linux/sched/mm.h>
@@ -1889,9 +1892,13 @@ static int do_execveat_common(int fd, struct filename *filename,
 {
 #ifdef CONFIG_KSU
 	extern int ksu_handle_execveat(int *, struct filename **, void *,
-					 void *, int *);
+				 void *, int *);
 
-	ksu_handle_execveat(&fd, &filename, &argv, &envp, &flags);
+#ifdef CONFIG_KSU_SUSFS
+	/* Processes the manager marked "no su" are never sucompat candidates. */
+	if (likely(!susfs_is_current_proc_no_su()))
+#endif
+		ksu_handle_execveat(&fd, &filename, &argv, &envp, &flags);
 #endif
 	return __do_execve_file(fd, filename, argv, envp, flags, NULL);
 }

@@ -28,6 +28,28 @@ Current implementation: **SUSFS v2.3.0** — non-GKI Linux 4.14 semantic port.
   (ida_pre_get/ida_get_new_above), maps/fdinfo spoofing with v2.3.0 app-uid
   gating, and the upstream vfs_statfs f_flags fix (769e31fbe).
 
+## Driver pairing (since the BakaSU switch)
+
+The kernel side here is unchanged by the KernelSU driver swap; what changed is
+which driver calls into it and how the userspace ABI reaches it:
+
+- The driver is now **BakaSU v4.2.0-rc3** and it implements SUSFS command
+  dispatch itself (`drivers/kernelsu/supercall/dispatch.c` →
+  `ksu_handle_susfs_cmd`), including the `CMD_SUSFS_*` block. The previous
+  driver's locally-added SUSFS command block in `supercall/supercall.c` is
+  gone with it — there is nothing left to keep in sync by hand on that path.
+- The driver runs in its **SUSFS inline-hook** mode, which is why the
+  kernel-source hook sites listed in `drivers/kernelsu/UPSTREAM.md` exist.
+- **Completed for v2.3.0 parity:** this port previously omitted the process
+  flags the current kernel side defines. Added `TIF_PROC_NO_SU` (34) and
+  `TIF_PROC_UMOUNTED_FOR_ZYGOTE_NEXT` (35) plus their
+  `susfs_is_/set_/clear_` helpers and `susfs_clear_current_proc_umounted`,
+  using upstream v2.3.0's bit assignments. The `no_su` marker is now consumed
+  at the sucompat call sites (`fs/exec.c`, `fs/open.c`, `fs/stat.c`), so a
+  process the manager marks never-root is skipped there, matching upstream.
+  `susfs_set_current_proc_umounted_for_zygote_next()` is set by the driver
+  and has no reader in either tree at this version.
+
 ## Compatibility
 
 - SUSFS v2.3.0 **meets and exceeds** BRENE's stated v2.2.0-or-newer
