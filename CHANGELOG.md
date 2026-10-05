@@ -3,13 +3,14 @@
 Full feature documentation lives in RELEASE_NOTES.md (repo). This file is
 what gets attached to each release: only what changed in that build.
 
-## #118 — BBRplus added as a selectable congestion control (BBR stays the default)
-• **BBR remains the system default** (`CONFIG_DEFAULT_TCP_CONG="bbr"`) — the earlier swap was reverted; `net/ipv4/tcp_bbr.c` is back in the tree
-• **BBRplus is now built in alongside it** (`CONFIG_TCP_CONG_BBRPLUS=y`): Google's BBR v1 with BBR v2 backports — ACK-aggregation tracking (`bbr_extra_acked`, 10-round-trip window, 100 ms cap) plus a variable PROBE_BW gain-cycle length with randomized phase start. The ACK fix is the one that matters on mobile data: when GRO/delayed ACKs compress the ACK stream, plain v1 underestimates the delivery rate and under-paces
-• Switch at runtime, no reboot: `echo bbrplus > /proc/sys/net/ipv4/tcp_congestion_control` (back to `echo bbr > ...`)
-• Ported from the ApexKernel sm6250 tree (itself derived from Google's `tcp_bbr.c`, Dual BSD/GPL), adapted to this 4.14 tree: `tcp_snd_wnd_test()` un-static'd, `tcp_tso_autosize()` computed inline, `.min_tso_segs` instead of the 5.x `.tso_segs_goal` ops field, and `ICSK_CA_PRIV_SIZE` widened from 88 to 112 bytes (`icsk_ca_priv` 11 → 14 u64) so the struct fits — the same change the ApexKernel tree carries, costing 24 bytes per TCP socket
-• CI gate now requires `CONFIG_TCP_CONG_BBR=y`, `CONFIG_TCP_CONG_BBRPLUS=y` and `DEFAULT_TCP_CONG="bbr"`
-• Release assets are now sourced from our own immutable `stormbreaker-v111` copies (manager APK, BRENE, NoMount) instead of upstream tags — upstream deleted `backslashxx/KernelSU` v3.3.0-56 mid-build and broke the release job, so the build no longer trusts upstream to keep tags around
+## #119 — KernelSU driver updated to v3.3.0-60; BBRplus is the default congestion control
+• **KernelSU driver synced `v3.3.0-56` → `v3.3.0-60`**: `INTERNAL.md`, `hook/lsm_hooks_ultralegacy.c` (`memcmp_inline`, no zero-init probe buffer), `manager/pkg_observer.c` (`strnstr`), `ksu.c` (module-blacklist include simplification on the module path) and `Kconfig` (the kprobes-based hook option is now deprecated-gated). Kernel ABI unchanged (`KSU_VERSION 32657`), so the manager still matches
+• **Manager APK: upstream v3.3.0-60 build**, with the immutable -56 copy on our own `stormbreaker-v111` release as the fallback — upstream deleted the -56 tag mid-build last run, so the build no longer depends on any single upstream tag
+• The SUSFS v2.3.0 integration stays local as always; the KernelSU-Next/KOWX712 fork certificate is trimmed again
+• **BBRplus is now the system default congestion control** (`CONFIG_DEFAULT_TCP_CONG="bbrplus"`): Google's BBR v1 with BBR v2 backports — ACK-aggregation tracking (`bbr_extra_acked`, 10-round-trip window, 100 ms cap) plus a variable PROBE_BW gain-cycle length with randomized phase start. The ACK fix is what matters on mobile data: when GRO/delayed ACKs compress the ACK stream, plain BBR v1 underestimates the delivery rate and under-paces
+• **Plain BBR v1 stays built in** and is one sysctl away: `echo bbr > /proc/sys/net/ipv4/tcp_congestion_control`. CUBIC, Vegas, Westwood+, BIC and HTCP are selectable too
+• 4.14 adaptations behind BBRplus: `tcp_snd_wnd_test()` un-static'd, `tcp_tso_autosize()` computed inline, `.min_tso_segs` instead of the 5.x `.tso_segs_goal` ops field, `ICSK_CA_PRIV_SIZE` widened 88 → 112 bytes (same change the ApexKernel tree carries; +24 bytes per TCP socket)
+• CI gate now requires `CONFIG_TCP_CONG_BBR=y`, `CONFIG_TCP_CONG_BBRPLUS=y` and `DEFAULT_TCP_CONG="bbrplus"`
 
 ## #111 — back to the v93 lineage: backslashxx driver v3.3.0-56, one manager only
 • **Base is the original v93 tree again** (run #93, commit `d62bca985`): MGLRU compiled in, the Droidspaces container/namespace fragment (SYSVIPC, mqueue, PID/USER namespaces, cgroup device/pids/net_prio, nftables, bridge netfilter, xt addrtype) compiled in, BFQ default I/O scheduler, stock VM sysctls (no RAM-tier tuning), stock TCP sysctls with BBR still the default congestion control and fq_codel built in but not the default. The #96–#110 tuning lineage is withdrawn

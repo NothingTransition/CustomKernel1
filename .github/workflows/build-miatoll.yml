@@ -169,12 +169,12 @@ jobs:
           require_config 'CONFIG_EXT4_ENCRYPTION=y'
           require_config 'CONFIG_FS_ENCRYPTION=y'
           require_config 'CONFIG_NETFILTER_XT_TARGET_TRACE=y'
-          # Mobile-data default: BBR. BBRplus (BBR v1 + BBR v2 ACK
-          # aggregation) is built in alongside it as a switchable option.
+          # Mobile-data default: BBRplus (BBR v1 + BBR v2 ACK
+          # aggregation). Plain BBR v1 is built in as a switchable option.
           # fq_codel is compiled in while the default qdisc stays stock.
           require_config 'CONFIG_TCP_CONG_BBR=y'
           require_config 'CONFIG_TCP_CONG_BBRPLUS=y'
-          require_config 'CONFIG_DEFAULT_TCP_CONG="bbr"'
+          require_config 'CONFIG_DEFAULT_TCP_CONG="bbrplus"'
           require_config '# CONFIG_NET_SCH_DEFAULT is not set'
           require_config 'CONFIG_NET_SCH_FQ_CODEL=y'
           # v93 lineage: MGLRU is compiled in (LRU_GEN=y).
@@ -354,16 +354,24 @@ jobs:
           from_ours() { gh release download stormbreaker-v111 \
             -R "$GITHUB_REPOSITORY" -p "$1" -D release-assets --clobber; }
 
-          if from_ours 'KernelSU-manager.apk'; then
-            echo "manager APK: from stormbreaker-v111 (backslashxx v3.3.0-56)"
-          else
-            for tag in v3.3.0-60 v3.3.0-55; do
-              gh release download "$tag" -R backslashxx/KernelSU \
-                -p 'KernelSU_v3.3.0-*_*-release.apk' -D release-assets \
-                --clobber && break
-            done
-            mv release-assets/KernelSU_v3.3.0-*_*-release.apk \
-               release-assets/KernelSU-manager.apk
+          # Manager APK: the fresh upstream release first (matches the
+          # v3.3.0-60 driver source), then older upstream tags, then the
+          # immutable -56 build on our own v111 release (same 32657 ABI).
+          got_manager=0
+          for tag in v3.3.0-60 v3.3.0-55; do
+            if gh release download "$tag" -R backslashxx/KernelSU \
+                 -p 'KernelSU_v3.3.0-*_*-release.apk' -D release-assets \
+                 --clobber; then
+              mv release-assets/KernelSU_v3.3.0-*_*-release.apk \
+                 release-assets/KernelSU-manager.apk
+              echo "manager APK: from backslashxx/KernelSU $tag"
+              got_manager=1
+              break
+            fi
+          done
+          if [ "$got_manager" -eq 0 ]; then
+            from_ours 'KernelSU-manager.apk'
+            echo "manager APK: from stormbreaker-v111 (v3.3.0-56 build)"
           fi
 
           if from_ours 'BRENE-v0.0.68.zip'; then

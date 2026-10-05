@@ -5,9 +5,9 @@ Linux 4.14.357-openela · built with Clang/LLVM 18 · A-only flash
 ## Features
 
 ### Root & control
-- KernelSU v3.3.0-56 — built-in, supercall-based (no kprobes, no daemon, no /su binary); `KSU_VERSION 32657`
+- KernelSU v3.3.0-60 — built-in, supercall-based (no kprobes, no daemon, no /su binary); `KSU_VERSION 32657` (ABI unchanged from -56)
 - **Only the backslashxx/KernelSU manager family is accepted.** Two certificates are trusted: backslashxx release managers (public dummy.keystore, package-locked to `me.weishu.kernelsu`) and self-built managers signed with the official KernelSU certificate (`c371061b…`). Fork managers (KernelSU-Next, KOWX712, …) are deliberately rejected
-- Manager APK bundled with the release: **KernelSU v3.3.0-56** (`KernelSU-manager.apk`)
+- Manager APK bundled with the release: **KernelSU v3.3.0-60** (`KernelSU-manager.apk`; the immutable -56 copy on our v111 release is the fallback)
 
 ### Hiding stack
 - **SUSFS v2.3.0** — full feature set:
@@ -34,9 +34,9 @@ Linux 4.14.357-openela · built with Clang/LLVM 18 · A-only flash
 - **Multigenerational LRU (MGLRU)** — the backport is compiled in (`CONFIG_LRU_GEN=y`) and stays **off at runtime** by default (`/sys/kernel/mm/lru_gen/enabled` turns it on). Source and `Documentation/vm/multigen_lru.rst` are in the tree
 
 ### Networking
-- **TCP BBR** congestion control — compiled in and set as the **system default**
-- **BBRplus** is built in alongside it as a selectable option (BBR v1 + BBR v2 backports: ACK-aggregation tracking with a 10-round-trip window and 100 ms cap, plus a variable PROBE_BW gain-cycle length with randomized phase start). Switch at runtime with `echo bbrplus > /proc/sys/net/ipv4/tcp_congestion_control`
-- **CUBIC, Vegas, Westwood+, BIC and HTCP** are built in too — switchable per-route/app
+- **BBRplus** congestion control — set as the **system default**. Google's BBR v1 with BBR v2 backports: ACK-aggregation tracking (`bbr_extra_acked`, 10-round-trip window, 100 ms cap) plus a variable PROBE_BW gain-cycle length with randomized phase start. The ACK fix is the point on cellular — when GRO and delayed ACKs compress the ACK stream, plain BBR v1 underestimates the delivery rate and under-paces
+- **Plain BBR v1 is built in too** and is one sysctl away: `echo bbr > /proc/sys/net/ipv4/tcp_congestion_control`
+- **CUBIC, Vegas, Westwood+, BIC and HTCP** are built in as well — switchable per-route/app
 - **FQ_CODEL** and **FQ** packet schedulers built in — the default qdisc is the stock `pfifo_fast` in this lineage; switch an interface with `tc qdisc replace dev <if> root fq_codel`
 - TCP sysctls are stock — the #105 `net_tune` defaults are not in this build (see the networking section below for the values and how to set them if you want them)
 - BPF / eBPF support (syscall + JIT)
@@ -79,11 +79,11 @@ Known gaps, stated plainly:
 
 ### Network tuning: mobile data + WiFi
 
-The kernel cannot raise what the radio gives you — peak throughput is modem firmware, carrier provisioning, band and signal. What it *can* do is use the link well. This lineage ships **stock TCP sysctls** with **BBR already the default congestion control**, so the one change with real effect under load is in. The #105 `net_tune` defaults (`fq_codel` as default qdisc, `tcp_slow_start_after_idle=0`, `tcp_mtu_probing=1`) are **not** applied at boot here; they remain ordinary sysctls you can set yourself at runtime (root):
+The kernel cannot raise what the radio gives you — peak throughput is modem firmware, carrier provisioning, band and signal. What it *can* do is use the link well. This lineage ships **stock TCP sysctls** with **BBRplus already the default congestion control**, so the one change with real effect under load is in. The #105 `net_tune` defaults (`fq_codel` as default qdisc, `tcp_slow_start_after_idle=0`, `tcp_mtu_probing=1`) are **not** applied at boot here; they remain ordinary sysctls you can set yourself at runtime (root):
 
 | Knob | This build | #105 value, if you want it | Why anyone wants it |
 |---|---|---|---|
-| `tcp_congestion_control` | `bbr` | `bbr` | BBR behaves far better than CUBIC on lossy, high-RTT cellular links. BBRplus is also built in — same idea plus the ACK-aggregation fix for compressed ACKs: `echo bbrplus > /proc/sys/net/ipv4/tcp_congestion_control` |
+| `tcp_congestion_control` | `bbrplus` | `bbr` | BBRplus (BBR v1 + the v2 ACK-aggregation fix) behaves far better than CUBIC on lossy, high-RTT cellular links; plain `bbr` is built in too — `echo bbr > /proc/sys/net/ipv4/tcp_congestion_control` |
 | `net.core.default_qdisc` | `pfifo_fast` (stock) | `fq_codel` | fq_codel keeps queue delay low, so uploads stop ballooning RTT |
 | `tcp_slow_start_after_idle` | `1` (stock) | `0` | Keeps the congestion window across idle periods instead of re-ramping |
 | `tcp_mtu_probing` | `0` (stock) | `1` | Finds a working MSS when the path drops ICMP "fragmentation needed" |
@@ -99,7 +99,7 @@ echo 1 > /proc/sys/net/ipv4/tcp_mtu_probing
 Verify what you have (root):
 
 ```
-cat /proc/sys/net/ipv4/tcp_congestion_control      # bbr
+cat /proc/sys/net/ipv4/tcp_congestion_control      # bbrplus
 cat /proc/sys/net/core/default_qdisc               # pfifo_fast unless you changed it
 cat /proc/sys/net/ipv4/tcp_slow_start_after_idle   # 1
 cat /proc/sys/net/ipv4/tcp_mtu_probing             # 0
@@ -136,7 +136,7 @@ Editing the ini needs root and a rewrite of `/vendor` (Magisk module or overlay 
 | File | What it is |
 |---|---|
 | `Stormbreaker-miatoll-KSU-SUSFS-NoMount-*.zip` | Flashable AnyKernel3 zip — kernel + Stormbreaker DTB + DTBO (all four miatoll devices) |
-| `KernelSU-manager.apk` | KernelSU manager app v3.3.0-56 — install **after** flashing + booting |
+| `KernelSU-manager.apk` | KernelSU manager app v3.3.0-60 — install **after** flashing + booting |
 | `BRENE-v0.0.68.zip` | SUSFS rules module — install inside the KSU manager, then reboot |
 | `NoMount-v2.0.0.zip` | NoMount module — install inside the KSU manager, then reboot |
 

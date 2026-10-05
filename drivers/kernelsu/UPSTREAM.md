@@ -3,9 +3,8 @@
 This directory vendors the kernel component from:
 
 - Repository: https://github.com/backslashxx/KernelSU
-- Tag: `v3.3.0-56` (upstream kernel Makefile: 32657)
-- Commit: `1f47db46ed59fd3495a0905552627ce4dd970c63` (tag object
-  `9c3f79710ce11438e54fae51f16588498ca2a6e6`)
+- Tag: `v3.3.0-60` (upstream kernel Makefile: 32657 - ABI unchanged)
+- Commit: `436b7102bb5d6a6c7e6d6b1a3d3f8de0e2cbd6f6`
 - Manager policy (Stormbreaker, by maintainer decision 2026-10-05): **only the
   backslashxx/KernelSU manager family is trusted.** The tree accepts the
   release managers (public dummy.keystore cert `0x363/4359c171…`, package
@@ -19,6 +18,21 @@ This directory vendors the kernel component from:
 
 ## Sync history
 
+- 2026-10-05: manual sync `v3.3.0-56` -> `v3.3.0-60` on the v93 lineage
+  (KSU_VERSION stays 32657 - upstream did not bump the kernel ABI; release
+  -56 was deleted upstream, so the old pin no longer resolves). Taken
+  upstream wholesale: `INTERNAL.md`, `hook/lsm_hooks_ultralegacy.c`
+  (`memcmp_inline`, no zero-init of the probe buffer), `manager/pkg_observer.c`
+  (`strnstr`), `manager/apk_sign.c` (KOWX712 block trimmed again),
+  `ksu.c` (module-blacklist include simplification on the module path),
+  `Kconfig` (the kprobes-based hook option is now marked deprecated and
+  depends on DEPRECATED, which this 4.14 tree does not define - the option
+  stays unavailable, as intended). Kept local as always: the SUSFS-carrying
+  files (`Kconfig` menu, `ksu.c` susfs_init, `hook/setuid_hook.c`,
+  `selinux/selinux.c`, `supercall/supercall.c` SUSFS command block,
+  `supercall/dispatch.c` atomic one-shot + module-mounted flag).
+  Manager APK ships as the upstream v3.3.0-60 build, with the immutable
+  -56 copy on `stormbreaker-v111` as the fallback.
 - 2026-10-05: manual sync `v3.3.0-52` -> `v3.3.0-56` on the v93 lineage
   (KSU_VERSION 32651 -> 32657). Taken upstream wholesale (16 files):
   `Makefile`, `INTERNAL.md`, `downstream/module_blacklist.h`,

@@ -361,5 +361,6 @@ bool is_manager_apk(char *path)
 	 * me.weishu.kernelsu above) and self-built managers carrying the
 	 * official KernelSU cert. Forks (KernelSU-Next, KOWX712, ...) are
 	 * deliberately not accepted. */
+
 	return false;
 }

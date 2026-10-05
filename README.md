@@ -16,9 +16,9 @@ One zip for all four — it ships its own DTB and DTBO.
 ## Features
 
 ### Root & hiding
-- **KernelSU** built in — driver vendored from backslashxx/KernelSU `v3.3.0-56` (`KSU_VERSION 32657`); no kprobes, no daemon, no `/su` binary
+- **KernelSU** built in — driver vendored from backslashxx/KernelSU `v3.3.0-60` (`KSU_VERSION 32657`, ABI unchanged); no kprobes, no daemon, no `/su` binary
 - **Only the backslashxx/KernelSU manager family is accepted**: release managers signed with the public dummy.keystore (package-locked to `me.weishu.kernelsu`) and self-built managers carrying the official KernelSU certificate. Fork managers (KernelSU-Next, KOWX712, …) are deliberately rejected
-- Manager APK attached to every release: **KernelSU `v3.3.0-56`**
+- Manager APK attached to every release: **KernelSU `v3.3.0-60`** (upstream build; our immutable -56 copy is the fallback)
 - **SUSFS v2.3.0** — sus_path, sus_mount, sus_kstat, sus_map, spoof uname / cmdline+bootconfig, open_redirect, AVC log spoofing, KSU/SUSFS symbol hiding
 - **NoMount v2.0.0** — per-app directory hiding via keyring rules
 - **BRENE v0.0.68** module bundled — SUSFS rules control panel
@@ -39,7 +39,7 @@ One zip for all four — it ships its own DTB and DTBO.
 - HZ 300 for finer UI scheduling; PSI for modern Android
 
 ### Networking
-- **BBR** system default congestion control; **BBRplus** is built in as an option and switchable at runtime (Google's BBR v1 plus BBR v2 backports — ACK-aggregation tracking + variable PROBE_BW cycle — which fixes v1's under-pacing when mobile-data ACKs arrive compressed). Vegas, Westwood+, BIC and HTCP are selectable too
+- **BBRplus** system default congestion control — Google's BBR v1 plus BBR v2 backports (ACK-aggregation tracking + variable PROBE_BW cycle) that fix v1's under-pacing when mobile-data ACKs arrive compressed. **Plain BBR v1 is built in too** and switchable at runtime (`echo bbr > /proc/sys/net/ipv4/tcp_congestion_control`), as are Vegas, Westwood+, BIC and HTCP
 - **fq_codel** and **fq** packet schedulers built in — the default qdisc is the stock `pfifo_fast` in this lineage; select fq_codel per interface with `tc qdisc replace`
 - TCP sysctls are stock (the #105 `net_tune` defaults are not in this build); WiFi guidance (the ROM's `WCNSS_qcom_cfg.ini`) in RELEASE_NOTES
 
