@@ -5,8 +5,9 @@ Linux 4.14.357-openela · built with Clang/LLVM 18 · A-only flash
 ## Features
 
 ### Root & control
-- KernelSU v3.3.0-52 — built-in, supercall-based (no kprobes, no daemon, no /su binary)
-- KernelSU manager apps bundled with the release: **KernelSU v3.3.0-55** and **KernelSU-Next v3.4.0** — the kernel driver stays `v3.3.0-52` (`KSU_VERSION 32651`); upstream deleted the older manager releases, so the pin tracks the newest resolvable tag
+- KernelSU v3.3.0-56 — built-in, supercall-based (no kprobes, no daemon, no /su binary); `KSU_VERSION 32657`
+- **Only the backslashxx/KernelSU manager family is accepted.** Two certificates are trusted: backslashxx release managers (public dummy.keystore, package-locked to `me.weishu.kernelsu`) and self-built managers signed with the official KernelSU certificate (`c371061b…`). Fork managers (KernelSU-Next, KOWX712, …) are deliberately rejected
+- Manager APK bundled with the release: **KernelSU v3.3.0-56** (`KernelSU-manager.apk`)
 
 ### Hiding stack
 - **SUSFS v2.3.0** — full feature set:
@@ -23,31 +24,20 @@ Linux 4.14.357-openela · built with Clang/LLVM 18 · A-only flash
 - **BRENE v0.0.68** module bundled — SUSFS rules control panel
 
 ### Storage / IO
-- **CFQ** I/O scheduler — the system default again since #109 (the ROM tunes CFQ-family blkio knobs that BFQ does not expose, and the known-good Imperial-X build runs it). **BFQ** stays compiled in and selectable per-disk, as do noop/deadline/mq-deadline/kyber
+- **BFQ** I/O scheduler — the system default in this lineage (as in the original v93 build). **CFQ**, deadline, mq-deadline, noop and kyber all stay compiled in and selectable per-disk
 - BFQ cgroup (per-app) scheduling support
 - **BLK_WBT** block writeback throttling (sq + mq) — smooths background writes so foreground operations stay responsive
 
 ### Memory
-- **RAM-tier auto-tuning** — one image covers the whole miatoll family (4/6/8 GB), so the kernel detects installed RAM at boot and applies the profile that fits instead of one compromise for all. All values stay ordinary sysctls, so ROM init scripts / root can still override them:
-
-  | knob | 4 GB | 6 GB | 8 GB |
-  |---|---|---|---|
-  | kswapd reserve (`extra_free_kbytes`) | ~38 MB | ~43 MB | ~39 MB |
-  | `swappiness` | 100 | 100 | 100 |
-  | `vfs_cache_pressure` | 150 | 125 | 100 |
-  | `dirty_ratio` / `dirty_background_ratio` | 10 / 5 | 15 / 5 | 20 / 10 |
-  | `page_cluster` (swapin readahead) | 0 | 0 | 0 |
-
-  - The **kswapd reserve** is the anti-stutter one: stock leaves only ~7 MB on 4 GB, which is not enough to absorb an allocation burst, so the kernel falls into *direct* reclaim and everything stalls. ~40 MB on every tier lets reclaim happen in the background where it belongs.
-  - It is written as **`extra_free_kbytes`** (Qualcomm's "efk") rather than as `watermark_scale_factor`, on purpose: the ROM's post_boot forces `watermark_scale_factor=1` ("we are using efk") and runs **twice** — at `on init` and again at `sys.boot_completed=1` — so a reserve expressed that way is erased after boot, while `extra_free_kbytes` is not written by any ROM script. Both stay ordinary sysctls, overridable by root at runtime.
-  - **`swappiness = 100`** because swap here is zram (compressed RAM), not a disk — the 60 default is a rotating-disk heuristic that leaves zram underused.
-  - **`page_cluster = 0`** because zram is random access: reading 8 pages to satisfy a 1-page swapin is wasted work.
-- **Multigenerational LRU (MGLRU)** — compiled out since #109 (`# CONFIG_LRU_GEN is not set`). It was only ever inert here (`LRU_GEN_ENABLED` was off, so none of it ran) and an early field report had a hang with it enabled, so it is now dead weight out of the image. The source stays in `mm/` and the document in `Documentation/vm/multigen_lru.rst` for a future retry; CI asserts it stays out of both the .config and the linked image.
+- **Stock VM defaults** — this build is the v93 lineage: the boot-time RAM-tier tuning of the withdrawn #96–#110 stream is not in it. `swappiness` (60), `vfs_cache_pressure` (100), `dirty_ratio`/`dirty_background_ratio` (20/10), `watermark_scale_factor` (20) and `page_cluster` (3) are the kernel's own defaults
+- **zram** — built in with **dedup**; the boot default compressor is the stock **lzo**, with **lz4** selectable at runtime via `/sys/block/zram0/comp_algorithm`. `zstd` is not compiled into this lineage
+- **Multigenerational LRU (MGLRU)** — the backport is compiled in (`CONFIG_LRU_GEN=y`) and stays **off at runtime** by default (`/sys/kernel/mm/lru_gen/enabled` turns it on). Source and `Documentation/vm/multigen_lru.rst` are in the tree
 
 ### Networking
 - **TCP BBR** congestion control — compiled in and set as the system default
 - Additional TCP congestion controls built in: **Vegas, Westwood+, BIC, HTCP** (plus CUBIC) — switchable per-route/app
-- **FQ_CODEL** and **FQ** packet schedulers — bufferbloat control for steadier latency under load
+- **FQ_CODEL** and **FQ** packet schedulers built in — the default qdisc is the stock `pfifo_fast` in this lineage; switch an interface with `tc qdisc replace dev <if> root fq_codel`
+- TCP sysctls are stock — the #105 `net_tune` defaults are not in this build (see the networking section below for the values and how to set them if you want them)
 - BPF / eBPF support (syscall + JIT)
 
 ### Filesystems & compatibility
@@ -59,19 +49,19 @@ Linux 4.14.357-openela · built with Clang/LLVM 18 · A-only flash
 - **Official osm0sis AnyKernel3 template**: flasher structure, `anykernel.sh` and all tools updated to the current upstream osm0sis/AnyKernel3 master layout
 
 ### Android 16/17 readiness
-- **Containers / Droidspaces — removed in #109**: SYSVIPC, POSIX mqueue, PID/USER namespaces, cgroup device/pids/net_prio, nftables, bridge netfilter and xt addrtype are compiled out. Nothing in Android uses them; the Imperial-X kernel boots this same ROM with all of them off, so they were pure surface area. What a container still needs that this kernel keeps: UTS/NET namespaces, VETH/BRIDGE, cgroups, overlayfs, iptables/netfilter core
+- **Containers / Droidspaces — on** (v93 lineage): SYSVIPC, POSIX mqueue, PID and USER namespaces, cgroup device/pids/net_prio, nftables, bridge netfilter and xt addrtype are compiled in, on top of the UTS/NET namespaces, VETH/BRIDGE, cgroups, overlayfs and netfilter core — so Docker-style containers work
 - **Android 15 ROM parity**: MSDOS_FS, EXT4_ENCRYPTION, NETFILTER_XT_TARGET_TRACE aligned with A13-A15 ROM kernels
 - **Android 17 boot parity — tested working on Evolution X A17 (miatoll)**: defconfig aligned with a known-working Imperial-X A17 build (extracted from its shipped kernel config) — LZ4 ramdisk decompression (RD_LZ4), audit subsystem, full ftrace/tracing core, netfilter LOG/NFLOG/quota2-log targets, HIDRAW (FCM 7), EROFS per-cpu decompression kthreads, larger kernel log buffer. Boots past the OS animation where earlier builds hung at the boot logo. If a specific A17 ROM still misbehaves, report it — the stack has a runtime kill switch and builds are preserved per release for rollback
 
 ### Android 16/17 compatibility — what a non-GKI 4.14 kernel actually needs
 
-Google's support matrix lists only ACK kernels (5.10 and newer) for A16/A17, so 4.14 is a **legacy** path. What decides it in practice is **eBPF**: Android 16+ leans on the newer eBPF feature set, and the requirement on old kernels is "1:1 eBPF backports, feature equivalent to Linux 5.4". This tree carries the full ACK eBPF backport — a **superset of 5.4** (BPF ring buffer, in-kernel BTF, BPF iterators, trampolines + dispatcher, local/inode storage, struct_ops, bpf_fs). Builds #104+ also compile in **BPF LSM**, which was present in the tree but switched off (`CONFIG_LSM` already listed `bpf`, so that entry was dead). The **BPF stream parser** (sockmap/sk_msg) had to stay off: turning it on broke the first build that tried (#103) and the reason is in the tree's code, not the config — see the gap list below.
+Google's support matrix lists only ACK kernels (5.10 and newer) for A16/A17, so 4.14 is a **legacy** path. What decides it in practice is **eBPF**: Android 16+ leans on the newer eBPF feature set, and the requirement on old kernels is "1:1 eBPF backports, feature equivalent to Linux 5.4". This tree carries the full ACK eBPF backport — a **superset of 5.4** (BPF ring buffer, in-kernel BTF, BPF iterators, trampolines + dispatcher, local/inode storage, struct_ops, bpf_fs). This lineage compiles with **BPF LSM off** (`# CONFIG_BPF_LSM is not set`); the eBPF backport itself (ring buffer, in-kernel BTF, iterators, trampolines, struct_ops) stays in. The **BPF stream parser** (sockmap/sk_msg) had to stay off: turning it on broke the first build that tried (#103) and the reason is in the tree's code, not the config — see the gap list below.
 
 Android userspace requirements verified present in this kernel:
 
 | Area | What the kernel provides |
 |---|---|
-| eBPF | syscall + JIT (JIT always-on, unprivileged off), cgroup BPF, tc BPF, **BPF LSM**, ring buffer, iterators (sockmap/sk_msg: see gaps) |
+| eBPF | syscall + JIT (JIT always-on, unprivileged off), cgroup BPF, tc BPF, ring buffer, iterators (BPF LSM and sockmap/sk_msg: see gaps) |
 | Memory / limits | PSI (on by default — used by lmkd), cgroups (sched, cpuacct, freezer, pids, devices, net_prio, cpuset), WALT + SCHED_TUNE + schedutil |
 | Security | SELinux (develop + bootparam + AVC stats, checkreqprot=0), namespaces incl. user, seccomp filter, KASLR, STRICT_KERNEL_RWX, HARDENED_USERCOPY, INIT_ON_ALLOC, PAN/UAO |
 | Storage / encryption | FBE (ext4 + f2fs encryption), metadata encryption (`dm-default-key`), AVB (`dm-verity`), fs-verity, project quotas, incremental FS, EROFS/exFAT/NTFS |
@@ -88,22 +78,30 @@ Known gaps, stated plainly:
 
 ### Network tuning: mobile data + WiFi
 
-The kernel cannot raise what the radio gives you — peak throughput is modem firmware, carrier provisioning, band and signal. What it *can* do is use the link well, and that is what this build tunes. Being precise about the difference matters, so here is the whole change set:
+The kernel cannot raise what the radio gives you — peak throughput is modem firmware, carrier provisioning, band and signal. What it *can* do is use the link well. This lineage ships **stock TCP sysctls** with **BBR already the default congestion control**, so the one change with real effect under load is in. The #105 `net_tune` defaults (`fq_codel` as default qdisc, `tcp_slow_start_after_idle=0`, `tcp_mtu_probing=1`) are **not** applied at boot here; they remain ordinary sysctls you can set yourself at runtime (root):
 
-| Knob | Value | Why | Change it back at runtime |
+| Knob | This build | #105 value, if you want it | Why anyone wants it |
 |---|---|---|---|
-| `tcp_congestion_control` | `bbr` (already the default) | BBR behaves far better than CUBIC on lossy, high-RTT cellular links | `echo cubic > /proc/sys/net/ipv4/tcp_congestion_control` |
-| `net.core.default_qdisc` | `fq_codel` (new) | The old default was `pfifo_fast`, which just fills up: upload anything and RTT balloons, so everything *feels* slow. fq_codel keeps the queue delay low and stops one bulk flow from starving the rest — this is the "smooth" part | `echo pfifo_fast > /proc/sys/net/core/default_qdisc` |
-| `tcp_slow_start_after_idle` | `0` (new) | The stock default resets the congestion window whenever a flow has been idle, so the first seconds after the phone wakes are spent re-ramping | `echo 1 > /proc/sys/net/ipv4/tcp_slow_start_after_idle` |
-| `tcp_mtu_probing` | `1` (new) | Some carriers/CGNATs drop ICMP "fragmentation needed"; without probing, connections hang on large packets instead of finding an MSS that gets through | `echo 0 > /proc/sys/net/ipv4/tcp_mtu_probing` |
+| `tcp_congestion_control` | `bbr` | `bbr` | BBR behaves far better than CUBIC on lossy, high-RTT cellular links |
+| `net.core.default_qdisc` | `pfifo_fast` (stock) | `fq_codel` | fq_codel keeps queue delay low, so uploads stop ballooning RTT |
+| `tcp_slow_start_after_idle` | `1` (stock) | `0` | Keeps the congestion window across idle periods instead of re-ramping |
+| `tcp_mtu_probing` | `0` (stock) | `1` | Finds a working MSS when the path drops ICMP "fragmentation needed" |
 
-Verify on the phone (root):
+Set the last three at runtime if you want the #105 behavior (they do not survive a reboot unless a ROM script or module re-applies them):
+
+```
+echo fq_codel > /proc/sys/net/core/default_qdisc
+echo 0 > /proc/sys/net/ipv4/tcp_slow_start_after_idle
+echo 1 > /proc/sys/net/ipv4/tcp_mtu_probing
+```
+
+Verify what you have (root):
 
 ```
 cat /proc/sys/net/ipv4/tcp_congestion_control      # bbr
-cat /proc/sys/net/core/default_qdisc               # fq_codel
-cat /proc/sys/net/ipv4/tcp_slow_start_after_idle   # 0
-cat /proc/sys/net/ipv4/tcp_mtu_probing             # 1
+cat /proc/sys/net/core/default_qdisc               # pfifo_fast unless you changed it
+cat /proc/sys/net/ipv4/tcp_slow_start_after_idle   # 1
+cat /proc/sys/net/ipv4/tcp_mtu_probing             # 0
 ```
 
 Two honest notes. A qdisc change applies to network devices created **after** it is set; the data interfaces (`rmnet_data*` for cellular, `wlan0`) are created at runtime after boot, so they get it — an interface that already existed keeps its old qdisc until recreated, or fix it per device with `tc qdisc replace dev <if> root fq_codel` (needs the `tc` tool). And explicitly **not** done here: raising `tcp_rmem`/`tcp_wmem`. Those windows are auto-tuned per connection and already sized for fast links; oversized static buffers don't raise throughput, they add queuing delay and pin memory. "Internet booster" scripts that do that are placebo.
@@ -137,7 +135,7 @@ Editing the ini needs root and a rewrite of `/vendor` (Magisk module or overlay 
 | File | What it is |
 |---|---|
 | `Stormbreaker-miatoll-KSU-SUSFS-NoMount-*.zip` | Flashable AnyKernel3 zip — kernel + Stormbreaker DTB + DTBO (all four miatoll devices) |
-| `KernelSU-manager.apk` | KernelSU manager app v3.3.0-52 — install **after** flashing + booting |
+| `KernelSU-manager.apk` | KernelSU manager app v3.3.0-56 — install **after** flashing + booting |
 | `BRENE-v0.0.68.zip` | SUSFS rules module — install inside the KSU manager, then reboot |
 | `NoMount-v2.0.0.zip` | NoMount module — install inside the KSU manager, then reboot |
 

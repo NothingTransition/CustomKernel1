@@ -143,9 +143,9 @@ jobs:
           require_config 'CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y'
           require_config 'CONFIG_KSU_SUSFS_OPEN_REDIRECT=y'
           require_config 'CONFIG_NOMOUNT=y'
-          # Android 17 / AOSP userspace parity: the gate for Android 16+ on
-          # non-GKI 4.14 is the newer eBPF feature set. These must stay on.
-          require_config 'CONFIG_BPF_LSM=y'
+          # The eBPF backport is in this tree and BPF_SYSCALL/JIT stay on, but
+          # BPF LSM is off in the v93 lineage this release is based on.
+          require_config '# CONFIG_BPF_LSM is not set'
           # BPF_STREAM_PARSER must stay off until net/core/skmsg.c is ported
           # properly; it does not compile in this tree (sk_psock_init()'s
           # 'prot' is undeclared) and that broke build #103.
@@ -155,7 +155,7 @@ jobs:
           require_config 'CONFIG_PSI=y'
           require_config '# CONFIG_PSI_DEFAULT_DISABLED is not set'
           require_config 'CONFIG_ANDROID_BINDER_DEVICES="binder,hwbinder,vndbinder"'
-          require_config 'CONFIG_SECURITY_SELINUX_BOOTPARAM=y'
+          require_config '# CONFIG_SECURITY_SELINUX_BOOTPARAM is not set'
           require_config 'CONFIG_SECURITY_SELINUX_DEVELOP=y'
           require_config 'CONFIG_SECCOMP_FILTER=y'
           require_config 'CONFIG_DM_VERITY=y'
@@ -169,35 +169,31 @@ jobs:
           require_config 'CONFIG_EXT4_ENCRYPTION=y'
           require_config 'CONFIG_FS_ENCRYPTION=y'
           require_config 'CONFIG_NETFILTER_XT_TARGET_TRACE=y'
-          # Network tuning for mobile data (see net/net_tune.c): BBR stays the
-          # default congestion control and fq_codel becomes the default qdisc
-          # so the uplink queue cannot bufferbloat.
+          # Mobile-data defaults (v93 lineage): BBR is the default congestion
+          # control (as in v93) and fq_codel is compiled in, but the default
+          # qdisc is stock again — fq_codel can still be selected per
+          # interface with tc.
           require_config 'CONFIG_TCP_CONG_BBR=y'
           require_config 'CONFIG_DEFAULT_TCP_CONG="bbr"'
-          require_config 'CONFIG_NET_SCH_DEFAULT=y'
-          require_config 'CONFIG_DEFAULT_FQ_CODEL=y'
+          require_config '# CONFIG_NET_SCH_DEFAULT is not set'
           require_config 'CONFIG_NET_SCH_FQ_CODEL=y'
-          # #109: MGLRU is compiled out. It was only ever inert (the runtime
-          # static key was off, so the ~2.8k-line backport never ran); the code
-          # stays in mm/ for a future retry, the config stays off.
-          require_config '# CONFIG_LRU_GEN is not set'
-          # #109: the Droidspaces container fragment is out. Imperial-X boots
-          # this same ROM with every one of these off, which is the field
-          # evidence that Android does not need them.
-          require_config '# CONFIG_SYSVIPC is not set'
-          require_config '# CONFIG_POSIX_MQUEUE is not set'
-          require_config '# CONFIG_PID_NS is not set'
-          require_config '# CONFIG_USER_NS is not set'
-          require_config '# CONFIG_CGROUP_DEVICE is not set'
-          require_config '# CONFIG_CGROUP_PIDS is not set'
-          require_config '# CONFIG_CGROUP_NET_PRIO is not set'
-          require_config '# CONFIG_BRIDGE_NETFILTER is not set'
-          require_config '# CONFIG_NF_TABLES is not set'
-          require_config '# CONFIG_NETFILTER_XT_MATCH_ADDRTYPE is not set'
-          # #109: CFQ is the I/O scheduler default again. The ROM tunes
-          # CFQ-family blkio knobs (blkio.group_idle) that BFQ does not expose;
-          # BFQ stays compiled in and selectable per disk.
-          require_config 'CONFIG_DEFAULT_IOSCHED="cfq"'
+          # v93 lineage: MGLRU is compiled in (LRU_GEN=y).
+          require_config 'CONFIG_LRU_GEN=y'
+          # v93 lineage: the container/namespace set (Droidspaces fragment)
+          # is on, as it was in the v93 build.
+          require_config 'CONFIG_SYSVIPC=y'
+          require_config 'CONFIG_POSIX_MQUEUE=y'
+          require_config 'CONFIG_PID_NS=y'
+          require_config 'CONFIG_USER_NS=y'
+          require_config 'CONFIG_CGROUP_DEVICE=y'
+          require_config 'CONFIG_CGROUP_PIDS=y'
+          require_config 'CONFIG_CGROUP_NET_PRIO=y'
+          require_config 'CONFIG_BRIDGE_NETFILTER=y'
+          require_config 'CONFIG_NF_TABLES=y'
+          require_config 'CONFIG_NETFILTER_XT_MATCH_ADDRTYPE=y'
+          # v93 lineage: BFQ is the default I/O scheduler (as in the original
+          # v93 build); CFQ, deadline and kyber stay selectable per disk.
+          require_config 'CONFIG_DEFAULT_IOSCHED="bfq"'
           require_config '# CONFIG_KPROBES is not set'
           require_config 'CONFIG_EROFS_FS=y'
           require_config 'CONFIG_EROFS_FS_ZIP=y'
@@ -281,25 +277,13 @@ jobs:
           grep -q ' susfs_add_sus_map$' vmlinux.sym
           grep -q ' nomount_init$' vmlinux.sym
 
-          # #109: MGLRU must NOT be linked in any more, nor the SYSVIPC /
-          # user-namespace code the Droidspaces fragment pulled in. The config
-          # assertions above are the real gate; this proves the linked image
-          # agrees with them.
-          ! grep -q ' lru_gen_set_state$' vmlinux.sym
-          ! grep -q ' lru_gen_init_lruvec$' vmlinux.sym
-          ! grep -q ' lru_gen_init_mm$' vmlinux.sym
-          ! grep -q ' lru_gen_eviction$' vmlinux.sym
-          ! grep -q ' sys_semget$' vmlinux.sym
-          ! grep -q ' create_user_ns$' vmlinux.sym
-
-          # the RAM-tier tuning initcall must actually be in the image
-          grep -q ' ram_tune_init$' vmlinux.sym
-
-          # and so must the network tuning initcall
-          grep -q ' net_tune_init$' vmlinux.sym
-
-          # BPF LSM must be registered, not just configured on
-          grep -q ' bpf_lsm_init$' vmlinux.sym
+          # v93 lineage: MGLRU and the container/namespace set are back in.
+          # The config assertions above are the real gate; this proves the
+          # linked image agrees with them.
+          grep -q ' lru_gen_init_lruvec$' vmlinux.sym
+          grep -q ' lru_gen_init_mm$' vmlinux.sym
+          grep -q ' sys_semget$' vmlinux.sym
+          grep -q ' create_user_ns$' vmlinux.sym
 
           make -s O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- kernelrelease | tee kernel.release
@@ -365,24 +349,18 @@ jobs:
           set -euo pipefail
           # gh release download (authenticated) avoids anonymous rate limits
           # and follows asset redirects; exact tags pinned for reproducibility.
-          gh release download v3.3.0-55 -R backslashxx/KernelSU \
-            -p 'KernelSU_v3.3.0-55_*-release.apk' -D release-assets
-          mv release-assets/KernelSU_v3.3.0-55_*-release.apk \
+          gh release download v3.3.0-56 -R backslashxx/KernelSU \
+            -p 'KernelSU_v3.3.0-56_*-release.apk' -D release-assets
+          mv release-assets/KernelSU_v3.3.0-56_*-release.apk \
              release-assets/KernelSU-manager.apk
-          # second manager option: KernelSU-Next (kernel trusts its signature)
-          gh release download v3.4.0 -R KernelSU-Next/KernelSU-Next \
-            -p 'KernelSU_Next_v3.4.0_33294-release.apk' -D release-assets
-          mv release-assets/KernelSU_Next_v3.4.0_33294-release.apk \
-             release-assets/KernelSU-Next-manager.apk
           gh release download v0.0.68 -R rrr333nnn333/BRENE \
             -p 'BRENE-v0.0.68.zip' -D release-assets
           gh release download v2.0.0 -R maxsteeel/nomount \
             -p 'NoMount-v2.0.0-release.zip' -D release-assets
           mv release-assets/NoMount-v2.0.0-release.zip \
              release-assets/NoMount-v2.0.0.zip
-          # sanity: all three must be zip/apk archives
+          # sanity: the manager APK and modules must be zip/apk archives
           head -c2 release-assets/KernelSU-manager.apk | grep -q PK
-          head -c2 release-assets/KernelSU-Next-manager.apk | grep -q PK
           head -c2 release-assets/BRENE-v0.0.68.zip | grep -q PK
           head -c2 release-assets/NoMount-v2.0.0.zip | grep -q PK
           ls -la release-assets/
@@ -407,8 +385,8 @@ jobs:
           set -euo pipefail
           # One release per build, numbered to match the zip (run number).
           # Superseded iteration builds are pruned by hand so the releases page
-          # stays readable; the latest stable, the known-good fallback and the
-          # diagnostics pre-release are always kept (README -> "Releases & tags").
+          # stays readable; the latest stable and the diagnostics pre-release are
+          # always kept (README -> "Releases & tags").
           TAG="stormbreaker-v${GITHUB_RUN_NUMBER}"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release delete "$TAG" --yes --cleanup-tag
@@ -419,7 +397,6 @@ jobs:
             --notes-file release-notes.md \
             release-assets/Stormbreaker-miatoll-*.zip \
             release-assets/KernelSU-manager.apk \
-            release-assets/KernelSU-Next-manager.apk \
             release-assets/BRENE-v0.0.68.zip \
             release-assets/NoMount-v2.0.0.zip
           gh release view "$TAG" --json url --jq '.url'

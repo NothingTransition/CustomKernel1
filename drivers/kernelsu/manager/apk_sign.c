@@ -330,8 +330,6 @@ int get_pkg_from_apk_path(char *pkg, const char *path)
 	return 0;
 }
 
-int ksu_manager_kind; // which trusted manager was detected: 1 official, 2 KSUN
-
 bool is_manager_apk(char *path)
 {
 #ifdef KSU_MANAGER_PACKAGE
@@ -347,30 +345,21 @@ bool is_manager_apk(char *path)
 	}
 #endif
 
-	/* backslashxx RELEASE manager: releases are signed with the repo's
-	 * public dummy.keystore (build-manager.yml), so the real shipping cert
-	 * is 0x363/4359c171... -- locked to me.weishu.kernelsu pkgname
-	 * (upstream design, TheSillyOk/33a2a0ed4). Removed in the v83 whitelist
-	 * trim by mistake; without it the shipped manager never verifies. */
+	// dummy.keystore, however, lock it to me.weishu.kernelsu pkgname as per TheSillyOk/33a2a0ed4
 	char buf[KSU_MAX_PACKAGE_NAME];
-	char p[] = "me.weishu.kernelsu";
-	if (check_v2_signature(path, 0x363, "4359c171f32543394cbc23ef908c4bb94cad7c8087002ba164c8230948c21549") &&
-	    !get_pkg_from_apk_path(buf, path) && !strcmp(buf, p)) {
-		ksu_manager_kind = 1;
+	constexpr char p[] = "me.weishu.kernelsu";
+	if (check_v2_signature(path, 0x363, "4359c171f32543394cbc23ef908c4bb94cad7c8087002ba164c8230948c21549") && 
+		!get_pkg_from_apk_path(buf, path) && !memcmp_inline(buf, p, sizeof(p)))
 		return true;
-	}
 
-	// KernelSU official cert (c371061b: custom/self-built backslashxx managers)
-	if (check_v2_signature(path, EXPECTED_SIZE, EXPECTED_HASH)) {
-		ksu_manager_kind = 1;
+	// kernelsu official
+	if (check_v2_signature(path, EXPECTED_SIZE, EXPECTED_HASH))
 		return true;
-	}
 
-	// KernelSU-Next manager
-	if (check_v2_signature(path, 0x3e6, "79e590113c4c4c0c222978e413a5faa801666957b1212a328e46c00c69821bf7")) {
-		ksu_manager_kind = 2;
-		return true;
-	}
-
+	/* Stormbreaker: only the backslashxx/KernelSU manager family is
+	 * trusted - the release APKs (dummy.keystore, 0x363, pkg-locked to
+	 * me.weishu.kernelsu above) and self-built managers carrying the
+	 * official KernelSU cert. Forks (KernelSU-Next, KOWX712, ...) are
+	 * deliberately not accepted. */
 	return false;
 }

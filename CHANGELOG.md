@@ -3,6 +3,13 @@
 Full feature documentation lives in RELEASE_NOTES.md (repo). This file is
 what gets attached to each release: only what changed in that build.
 
+## #111 — back to the v93 lineage: backslashxx driver v3.3.0-56, one manager only
+• **Base is the original v93 tree again** (run #93, commit `d62bca985`): MGLRU compiled in, the Droidspaces container/namespace fragment (SYSVIPC, mqueue, PID/USER namespaces, cgroup device/pids/net_prio, nftables, bridge netfilter, xt addrtype) compiled in, BFQ default I/O scheduler, stock VM sysctls (no RAM-tier tuning), stock TCP sysctls with BBR still the default congestion control and fq_codel built in but not the default. The #96–#110 tuning lineage is withdrawn
+• **KernelSU driver synced v3.3.0-52 → v3.3.0-56** (`KSU_VERSION 32657`, upstream commit `1f47db46`): upstream v3.3.0-56 taken wholesale (16 files) plus the new `EVENT_SERVICES` supercall (services start/skip handling). The SUSFS v2.3.0 integration and the manager-certificate entry stay local, as always
+• **KernelSU-Next manager support removed** — the kernel now trusts only the backslashxx/KernelSU manager family: release managers (dummy.keystore cert, package-locked to `me.weishu.kernelsu`) and self-built managers on the official KernelSU cert. KSUN's certificate, the two-manager crowning priority and its driver-version report are gone. The release ships one manager APK: **KernelSU v3.3.0-56**
+• **CI gate moved to the v93 lineage** — the config gate now requires MGLRU / the container set / BFQ and keeps rejecting kprobes and the BPF stream parser; the linkage check asserts MGLRU and the namespaces are actually in the image instead of asserting they are gone
+• **v105–v110 withdrawn and deleted** — releases `v105`, `v108`, `v109`, `v110` removed from the releases page (superseded lineage). `stormbreaker-v93` stays as the restored original; this build is the default going forward
+
 ## #110 — repo housekeeping rebuild (no kernel change)
 • Nothing in the kernel changed — this is the #109 tree rebuilt to prove the pipeline still runs green after the cleanup, so the release metadata here can be trusted. Kernel zip is equivalent to #109
 • Releases page pruned from 21 releases (818 MB) to the ones that matter: this build (latest), #109, **v108 (known-good — the v105 tree, boots Infinity X 4.0)** and the `diag-1` pre-release (parked boot-stall bisect). Superseded iteration builds v78–v107 are gone

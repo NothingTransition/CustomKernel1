@@ -28,8 +28,6 @@ static int do_get_info(void __user *arg)
 	if (is_manager()) {
 		cmd.flags |= KSU_GET_INFO_FLAG_MANAGER;
 	}
-	if (is_manager() && ksu_manager_kind == 2)
-		cmd.version = 33294; /* report KernelSU-Next's own driver number to its manager */
 	cmd.features = KSU_FEATURE_MAX;
 	cmd.uapi_version = KERNEL_SU_UAPI_VERSION;
 
@@ -66,6 +64,7 @@ static int do_get_info_legacy(void __user *arg)
 
 static int do_report_event(void __user *arg)
 {
+	static bool services_started = false;
 	struct ksu_report_event_cmd cmd;
 
 	if (copy_from_user(&cmd, arg, sizeof(cmd))) {
@@ -78,6 +77,9 @@ static int do_report_event(void __user *arg)
 		 * plain bool read-modify-write was non-atomic (benign in practice,
 		 * but the on_post_fs_data() side effects must run exactly once). */
 		static atomic_t post_fs_data_done = ATOMIC_INIT(0);
+
+		// reset for emulated soft reboot (upstream v3.3.0-56)
+		services_started = false;
 		if (atomic_cmpxchg(&post_fs_data_done, 0, 1) == 0) {
 			pr_info("post-fs-data triggered\n");
 			on_post_fs_data();
@@ -101,6 +103,16 @@ static int do_report_event(void __user *arg)
 		pr_info("module mounted!\n");
 		on_module_mounted();
 		break;
+	}
+	case EVENT_SERVICES: {
+		/* backslashxx v3.3.0-56: services event with a start/skip result */
+		if (services_started) {
+			pr_info("services already started, skipping\n");
+			return 0;
+		}
+		services_started = true;
+		pr_info("services triggered\n");
+		return 1;
 	}
 	default:
 		break;

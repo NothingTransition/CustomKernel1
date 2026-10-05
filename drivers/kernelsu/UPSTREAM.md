@@ -3,15 +3,42 @@
 This directory vendors the kernel component from:
 
 - Repository: https://github.com/backslashxx/KernelSU
-- Tag: `v3.3.0-52` (upstream kernel Makefile: 32651)
-- Commit: `072d66af10bd14444a7aad6e9f3020dc19baaa7c` (master at the -52 release window; -52 ships no git tag)
-- Note: at this tag upstream's manager APK reports 32653 while the kernel
-  tree reports 32651 (upstream's own skew); we mirror the kernel value
-  (32651) verbatim. A same-day 32653 alignment experiment was reverted on
-  2026-09-24; future syncs keep mirroring the upstream kernel value.
+- Tag: `v3.3.0-56` (upstream kernel Makefile: 32657)
+- Commit: `1f47db46ed59fd3495a0905552627ce4dd970c63` (tag object
+  `9c3f79710ce11438e54fae51f16588498ca2a6e6`)
+- Manager policy (Stormbreaker, by maintainer decision 2026-10-05): **only the
+  backslashxx/KernelSU manager family is trusted.** The tree accepts the
+  release managers (public dummy.keystore cert `0x363/4359c171…`, package
+  locked to `me.weishu.kernelsu`) and self-built managers on the official
+  KernelSU cert (`c371061b…`). The KernelSU-Next cert (`0x3e6/79e59011…`),
+  the `ksu_manager_kind` bookkeeping, the two-manager crowning priority in
+  `manager/throne_tracker.c` and the KSUN driver-version report in
+  `supercall/dispatch.c` were removed; upstream -56 dropped its own
+  KSUN support at the same time, and the KOWX712 fork cert upstream added
+  (`0x375/484fcba6…`) is deliberately NOT accepted here.
 
 ## Sync history
 
+- 2026-10-05: manual sync `v3.3.0-52` -> `v3.3.0-56` on the v93 lineage
+  (KSU_VERSION 32651 -> 32657). Taken upstream wholesale (16 files):
+  `Makefile`, `INTERNAL.md`, `downstream/module_blacklist.h`,
+  `feature/adb_root.c`, `feature/kernel_umount.c`, `feature/selinux_hide.{c,h}`,
+  `hook/lsm_hooks_list.c`, `hook/lsm_hooks_ultralegacy.c`,
+  `hook/syscall_table_hook_arm.c`, `include/uapi/supercall.h` (UAPI 5,
+  `EVENT_SERVICES`), `kernel_compat.h`, `kernel_includes.h`,
+  `policy/allowlist.c`, `policy/app_profile.c`, `selinux/sepolicy.c`.
+  Taken upstream + locally trimmed: `manager/apk_sign.c` (upstream's
+  KOWX712 block removed - see the manager policy above),
+  `manager/manager_identity.h`, `manager/throne_tracker.c` (upstream's
+  single-manager crowning; our two-manager priority logic deleted).
+  Locally adapted: `supercall/dispatch.c` - took upstream's `EVENT_SERVICES`
+  handler (start/skip result, reset on the POST_FS_DATA path), removed the
+  KSUN version report, kept our atomic `EVENT_POST_FS_DATA` one-shot and the
+  SUSFS sdcard-monitor call. Kept local as always: the SUSFS-carrying files
+  (`Kconfig` menu, `ksu.c` susfs_init, `hook/setuid_hook.c` susfs
+  umount/looped-path work, `selinux/selinux.c`, `supercall/supercall.c`'s
+  SUSFS command block, `supercall/dispatch.c` bits above). Upstream -56 still
+  ships no SUSFS code.
 - 2026-09-26: manual sync `v3.3.0-51` -> `v3.3.0-52` (release -51 was deleted
   upstream, so the old manager pin no longer resolves). Taken upstream:
   `include/util.h` (drops the <5.9 ksu_sys_umount inline — its live <5.9 user

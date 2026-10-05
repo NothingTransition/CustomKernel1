@@ -51,3 +51,12 @@ useful artifact for this bug.
   with only the memory cgroup off). If that boots, the answer is a v109
   equivalent with the jitter work kept and memcg off — nothing needs rebuilding
   to run that test.
+
+---
+
+**2026-10-05 — the bisect no longer applies as-is.** The tree has been rebased
+to the v93 lineage (withdrawn: RAM-tier tuning, `net_tune`, CFQ default, MGLRU
+and Droidspaces compiled out), so `diag-miatoll.yml`'s `vmoff`/`tuners`
+variants reference `mm/ram_tune.c` / `net/net_tune.c`, which no longer exist.
+The workflow is still manual-only and parked; before re-running any variant,
+rebase it on the current tree.

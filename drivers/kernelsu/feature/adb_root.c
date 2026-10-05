@@ -97,8 +97,6 @@ envp_count_done:
 	if (IS_ERR_VALUE(mmap_page))
 		return -ENOMEM;
 
-	long ret = 0;
-
 	/**
 	 *  PLAN:
 	 * 	on 0, we put kLdPreload
@@ -113,13 +111,11 @@ envp_count_done:
 	void __user *kLdLibraryPath_p = (void __user *)(mmap_page + 64);
 	void __user *envp_array_p = (void __user *)(mmap_page + 128);
 
-	/* pre-buf failures: unmap directly (goto would bypass buf's
-	 * cleanup attribute and is rejected by the compiler) */
 	if (!!copy_to_user(kLdPreload_p, kLdPreload, sizeof(kLdPreload)))
-		{ vm_munmap(mmap_page, PAGE_SIZE); return -EFAULT; }
+		return -EFAULT;
 
 	if (!!copy_to_user(kLdLibraryPath_p, kLdLibraryPath, sizeof(kLdLibraryPath)))
-		{ vm_munmap(mmap_page, PAGE_SIZE); return -EFAULT; }
+		return -EFAULT;
 
 	// prepare uintptr_t array for new char **envp
 	// 2 entries plus a NULL
@@ -128,15 +124,15 @@ envp_count_done:
 
 	// well, it will overflow.
 	if (128 + array_bytes > PAGE_SIZE)
-		{ vm_munmap(mmap_page, PAGE_SIZE); return -E2BIG; }
+		return -E2BIG;
 
 	void *buf __offstack_flags(array_bytes, GFP_KERNEL | __GFP_ZERO);
 	if (!buf)
-		{ ret = -ENOMEM; goto out_unmap; }
+		return -ENOMEM;
 
 	// copy original envp array addresses
 	if (copy_from_user(buf, envp, env_count * kPtrSize))
-		{ ret = -EFAULT; goto out_unmap; }
+		return -EFAULT;
 
 	// 32-on-64 assumes LE.
 	if (kPtrSize == sizeof(uint32_t)) {
@@ -154,16 +150,11 @@ envp_count_done:
 
 	// blast new envp array to userspace
 	if (!!copy_to_user(envp_array_p, buf, array_bytes))
-		{ ret = -EFAULT; goto out_unmap; }
+		return -EFAULT;
 
 	*(void ***)envp_arg = (void **)envp_array_p;
 	pr_info("new envp array blasted to userspace\n");
-	return 0;
-
-out_unmap:
-	/* failed after mapping the trampoline page — give it back */
-	vm_munmap(mmap_page, PAGE_SIZE);
-	return ret;
+	return 0;	
 }
 
 static noinline void do_ksu_adb_root_execve_user(void *restrict filename, void *restrict envp_in)

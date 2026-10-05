@@ -4166,8 +4166,7 @@ static unsigned long lru_gen_shrink_lruvec(struct lruvec *lruvec, struct scan_co
  *                          the background aging
  ******************************************************************************/
 
-/* Default is overridden per RAM tier by mm/ram_tune.c; expose it for that. */
-int lru_gen_spread = IS_ENABLED(CONFIG_ANDROID) ? 0 : MIN_NR_GENS;
+static int lru_gen_spread = IS_ENABLED(CONFIG_ANDROID) ? 0 : MIN_NR_GENS;
 
 static void try_walk_mm_list(struct lruvec *lruvec, struct scan_control *sc)
 {

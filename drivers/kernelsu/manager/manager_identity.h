@@ -7,7 +7,6 @@
 #define KSU_PER_USER_RANGE 100000
 
 extern uid_t ksu_manager_appid; // DO NOT DIRECT USE
-extern int ksu_manager_kind; // 1 = official/backslashxx family, 2 = KernelSU-Next
 
 static inline bool ksu_is_manager_appid_valid()
 {
