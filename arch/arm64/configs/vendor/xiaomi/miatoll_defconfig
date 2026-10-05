@@ -1218,7 +1218,13 @@ CONFIG_CGROUP_NET_PRIO=y
 CONFIG_NET_RX_BUSY_POLL=y
 CONFIG_BQL=y
 CONFIG_BPF_JIT=y
-# CONFIG_BPF_STREAM_PARSER is not set
+# The BPF stream parser (sockmap/sk_msg) is on. Build #103 failed here
+# because net/core/skmsg.c carried an uncompilable stray line from the
+# 5.x backport (undeclared 'prot' in sk_psock_init); the callback it was
+# meant to save (saved_destroy) is now captured in sk_psock_update_proto()
+# and the whole file compiles. Enabling this selects STREAM_PARSER and
+# NET_SOCK_MSG, so skmsg.o, sock_map.o and tcp_bpf.o are built in.
+CONFIG_BPF_STREAM_PARSER=y
 CONFIG_NET_FLOW_LIMIT=y
 CONFIG_SOCKEV_NLMCAST=y
 
@@ -1291,7 +1297,6 @@ CONFIG_NFC_NQ=y
 # CONFIG_LWTUNNEL is not set
 CONFIG_DST_CACHE=y
 CONFIG_GRO_CELLS=y
-# CONFIG_NET_SOCK_MSG is not set
 # CONFIG_NET_DEVLINK is not set
 CONFIG_MAY_USE_DEVLINK=y
 CONFIG_HAVE_EBPF_JIT=y

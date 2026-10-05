@@ -490,7 +490,15 @@ struct sk_psock *sk_psock_init(struct sock *sk, int node)
 
 	psock->sk = sk;
 	psock->eval =  __SK_NONE;
-	psock->saved_destroy = prot->destroy;
+
+	/*
+	 * Stormbreaker local fix: upstream (5.10) sets psock->saved_destroy
+	 * here with a local 'struct proto *prot = READ_ONCE(sk->sk_prot)'.
+	 * This tree's older backport captures the other saved_* callbacks
+	 * lazily in sk_psock_update_proto() instead (and this function has no
+	 * 'prot' local at all, so the line was never compilable). saved_destroy
+	 * is captured in the same place now; see include/linux/skmsg.h.
+	 */
 
 	INIT_LIST_HEAD(&psock->link);
 	spin_lock_init(&psock->link_lock);

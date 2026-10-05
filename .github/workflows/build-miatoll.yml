@@ -155,10 +155,31 @@ jobs:
           # The eBPF backport is in this tree and BPF_SYSCALL/JIT stay on, but
           # BPF LSM is off in the v93 lineage this release is based on.
           require_config '# CONFIG_BPF_LSM is not set'
-          # BPF_STREAM_PARSER must stay off until net/core/skmsg.c is ported
-          # properly; it does not compile in this tree (sk_psock_init()'s
-          # 'prot' is undeclared) and that broke build #103.
-          require_config '# CONFIG_BPF_STREAM_PARSER is not set'
+          # The eBPF stream parser (sockmap/sk_msg) is on. Build #103 broke on
+          # net/core/skmsg.c backport leftovers and the option was disabled
+          # again; the file compiles now (see net/core/skmsg.c +
+          # include/linux/skmsg.h: saved_destroy is captured where the other
+          # saved_* callbacks are), and it selects STREAM_PARSER and
+          # NET_SOCK_MSG, which pull in skmsg.o, sock_map.o and tcp_bpf.o.
+          require_config 'CONFIG_BPF_STREAM_PARSER=y'
+          require_config 'CONFIG_STREAM_PARSER=y'
+          require_config 'CONFIG_NET_SOCK_MSG=y'
+
+          # SUSFS inline-hook call shape. In this mode the driver takes a real
+          # 'struct filename **' at faccessat/stat and rewrites ->name in
+          # place, so the caller must build the filename with getname_flags()
+          # and then look it up with filename_lookup(). The manual-hook form
+          # (passing the raw 'const char __user *') also compiles, but makes
+          # the driver dereference a user pointer as a struct filename - that
+          # is a silent runtime bug, so it is rejected here.
+          # (The legacy manual-hook call stays in fs/open.c, but only inside
+          # its '#ifndef CONFIG_KSU_SUSFS' arm; the assertions below are what
+          # prove the SUSFS-mode path is the one that is compiled.)
+          grep -q 'ksu_handle_faccessat(&dfd, &fname, &mode, NULL)' fs/open.c
+          grep -q 'ksu_handle_stat(&dfd, &fname, &flags)' fs/stat.c
+          grep -q '#ifndef CONFIG_KSU_SUSFS' fs/open.c
+          grep -q 'fname = getname_flags(filename, lookup_flags, NULL)' fs/open.c
+          grep -q 'fname = getname_flags(filename, lookup_flags, NULL)' fs/stat.c
           require_config 'CONFIG_BPF_JIT_ALWAYS_ON=y'
           require_config 'CONFIG_BPF_UNPRIV_DEFAULT_OFF=y'
           require_config 'CONFIG_PSI=y'
@@ -275,6 +296,11 @@ jobs:
           test -s out/drivers/kernelsu/kernelsu.o
           test -s out/fs/susfs.o
           test -s out/fs/nomount/nomount.o
+          # eBPF stream parser (sockmap/sk_msg) - all three objects must exist.
+          test -s out/net/core/skmsg.o
+          test -s out/net/core/sock_map.o
+          test -s out/net/ipv4/tcp_bpf.o
+          test -s out/net/strparser/strparser.o
 
           # Write once instead of piping llvm-nm into grep -q: with pipefail,
           # grep's early exit makes llvm-nm report EPIPE (exit 74).
@@ -291,6 +317,14 @@ jobs:
           grep -q ' susfs_init$' vmlinux.sym
           grep -q ' susfs_add_sus_map$' vmlinux.sym
           grep -q ' nomount_init$' vmlinux.sym
+          # eBPF stream parser: if any of these is missing the option silently
+          # collapsed and BPF_MAP_TYPE_SOCKMAP would not work.
+          grep -q ' sk_psock_init$' vmlinux.sym
+          grep -q ' sock_map_close$' vmlinux.sym
+          grep -q ' sock_map_destroy$' vmlinux.sym
+          grep -q ' sk_msg_alloc$' vmlinux.sym
+          grep -q ' tcp_bpf_recvmsg$' vmlinux.sym
+          grep -q ' strp_init$' vmlinux.sym
 
           # v93 lineage: MGLRU and the container/namespace set are back in.
           # The config assertions above are the real gate; this proves the
@@ -313,7 +347,7 @@ jobs:
             echo "toolchain.source=ubuntu-24.04-llvm"
             clang --version | head -n 1 | sed 's/^/clang.version=/'
             ld.lld --version | head -n 1 | sed 's/^/lld.version=/'
-            grep -E '^(CONFIG_KSU|CONFIG_NOMOUNT|CONFIG_LRU_GEN|CONFIG_DEFAULT_IOSCHED|CONFIG_SYSVIPC|CONFIG_USER_NS|CONFIG_NF_TABLES|CONFIG_EROFS_FS|CONFIG_NTFS_FS|CONFIG_BPF_SYSCALL|CONFIG_MODULE_SIG_FORCE)' out/.config || true
+            grep -E '^(CONFIG_KSU|CONFIG_NOMOUNT|CONFIG_LRU_GEN|CONFIG_DEFAULT_IOSCHED|CONFIG_SYSVIPC|CONFIG_USER_NS|CONFIG_NF_TABLES|CONFIG_EROFS_FS|CONFIG_NTFS_FS|CONFIG_BPF|CONFIG_STREAM_PARSER|CONFIG_NET_SOCK_MSG|CONFIG_MODULE_SIG_FORCE)' out/.config || true
           } | tee build-info.txt
 
       - name: Package AnyKernel3 flashable zip

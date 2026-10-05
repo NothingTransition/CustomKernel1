@@ -358,6 +358,16 @@ static inline void sk_psock_update_proto(struct sock *sk,
 		psock->saved_unhash = orig->unhash;
 		psock->saved_close = orig->close;
 		psock->saved_write_space = sk->sk_write_space;
+		/*
+		 * Stormbreaker local fix: sock_map_destroy() runs through
+		 * psock->saved_destroy, so it has to be captured here, before
+		 * the wrapper proto is installed. Upstream 5.10 captures it in
+		 * sk_psock_init(); this tree's older backport captures the
+		 * other callbacks here, and the line in sk_psock_init() that
+		 * was meant to do it referenced an undeclared 'prot' and never
+		 * compiled (CONFIG_BPF_STREAM_PARSER was off, so nobody hit it).
+		 */
+		psock->saved_destroy = orig->destroy;
 
 		psock->sk_proto = orig;
 	}

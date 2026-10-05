@@ -18,6 +18,7 @@
 #include <linux/pagemap.h>
 #include <linux/compat.h>
 #ifdef CONFIG_KSU_SUSFS
+#include <linux/jump_label.h>
 #include <linux/susfs_def.h>
 #include <linux/version.h>
 #endif
@@ -205,11 +206,9 @@ EXPORT_SYMBOL(vfs_statx_fd);
 
 #ifdef CONFIG_KSU_SUSFS
 extern bool __ksu_is_allow_uid_for_current(uid_t uid);
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
+extern struct static_key_true ksu_su_compat_enabled;
+/* SUSFS inline-hook mode: the hook takes a real struct filename ** */
 extern int ksu_handle_stat(int *dfd, struct filename **filename, int *flags);
-#else
-extern int ksu_handle_stat(int *dfd, const char __user **filename_user, int *flags);
-#endif
 #endif
 
 /**
@@ -233,19 +232,8 @@ int vfs_statx(int dfd, const char __user *filename, int flags,
 	struct path path;
 	int error = -EINVAL;
 	unsigned int lookup_flags = LOOKUP_FOLLOW | LOOKUP_AUTOMOUNT;
-
 #ifdef CONFIG_KSU_SUSFS
-	/* Already umounted, or marked "no su" by the manager: nothing to do. */
-	if (likely(susfs_is_current_proc_umounted()) ||
-	    likely(susfs_is_current_proc_no_su())) {
-		goto orig_flow;
-	}
-
-	if (unlikely(__ksu_is_allow_uid_for_current(current_uid().val))) {
-		ksu_handle_stat(&dfd, &filename, &flags);
-	}
-
-orig_flow:
+	struct filename *fname = NULL;
 #endif
 
 	if ((flags & ~(AT_SYMLINK_NOFOLLOW | AT_NO_AUTOMOUNT |
@@ -260,7 +248,36 @@ orig_flow:
 		lookup_flags |= LOOKUP_EMPTY;
 
 retry:
+#ifdef CONFIG_KSU_SUSFS
+	/*
+	 * SUSFS inline-hook mode: the driver rewrites fname->name in place
+	 * (/system/bin/su -> /system/bin/sh) and this lookup then resolves the
+	 * rewritten name, so the filename has to be built here instead of by
+	 * user_path_at(). filename_lookup() consumes fname itself - there is no
+	 * putname() on this path (see the SUSFS kernel-side reference patch).
+	 */
+	fname = getname_flags(filename, lookup_flags, NULL);
+	if (IS_ERR(fname)) {
+		error = PTR_ERR(fname);
+		fname = NULL;
+		goto out;
+	}
+
+	/* Already umounted, or marked "no su" by the manager: nothing to do. */
+	if (likely(susfs_is_current_proc_umounted()) ||
+	    likely(susfs_is_current_proc_no_su()))
+		goto orig_flow;
+
+	if (static_branch_unlikely(&ksu_su_compat_enabled)) {
+		if (unlikely(__ksu_is_allow_uid_for_current(current_uid().val)))
+			ksu_handle_stat(&dfd, &fname, &flags);
+	}
+
+orig_flow:
+	error = filename_lookup(dfd, fname, lookup_flags, &path, NULL);
+#else
 	error = user_path_at(dfd, filename, lookup_flags, &path);
+#endif
 	if (error)
 		goto out;
 

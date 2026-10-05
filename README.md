@@ -45,7 +45,7 @@ One zip for all four — it ships its own DTB and DTBO.
 - TCP sysctls are stock (the #105 `net_tune` defaults are not in this build); WiFi guidance (the ROM's `WCNSS_qcom_cfg.ini`) in RELEASE_NOTES
 
 ### Android
-- **Android 13–17** — A17 tested on Evolution X; full ACK eBPF backport (ring buffer, in-kernel BTF, iterators, trampolines). BPF LSM is off in this lineage, and sockmap/sk_msg stays off because that part of the backport does not compile here — see RELEASE_NOTES for the A16/A17 compatibility audit
+- **Android 13–17** — A17 tested on Evolution X; full ACK eBPF backport (ring buffer, in-kernel BTF, iterators, trampolines) **plus the stream parser** — sockmap/sk_msg builds and is on (`BPF_MAP_TYPE_SOCKMAP` works); BPF LSM is off in this lineage. See RELEASE_NOTES for the A16/A17 compatibility audit
 - Binder (`binder,hwbinder,vndbinder`), SELinux (enforcing, `checkreqprot=0`), seccomp filter, KASLR, STRICT_KERNEL_RWX, INIT_ON_ALLOC, hardened usercopy
 - **LZ4 ramdisk**, boot header v2, **A-only** device — one zip for curtana / excalibur / gram / joyeuse (own DTB + DTBO)
 
@@ -81,7 +81,7 @@ Builds run in GitHub Actions on Ubuntu 24.04 with the distro LLVM toolchain — 
 - **Diagnostics:** experimental bisect kernels live in `diag/` and build on manual dispatch only — see `diag/README.md`.
 - **Restore:** `.github/workflows/restore-release.yml` re-attaches a pruned release's original zip from the CI artifact of the run that built it (used once to bring back `v93`); it never rebuilds.
 
-CI enforces: no duplicate defconfig symbols, the required config set must be present in the *resolved* `.config`, the v93-lineage features (MGLRU, the container/namespace set, BFQ default) must be in it, and the options that must stay off (kprobes, the BPF stream parser) stay off.
+CI enforces: no duplicate defconfig symbols, the required config set must be present in the *resolved* `.config` (including the eBPF stream parser, whose objects and symbols are also checked in the linked image), the v93-lineage features (MGLRU, the container/namespace set, BFQ default) must be in it, and the options that must stay off (kprobes) stay off.
 
 ## Credits
 
