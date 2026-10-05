@@ -348,17 +348,39 @@ jobs:
         run: |
           set -euo pipefail
           # gh release download (authenticated) avoids anonymous rate limits
-          # and follows asset redirects; exact tags pinned for reproducibility.
-          gh release download v3.3.0-56 -R backslashxx/KernelSU \
-            -p 'KernelSU_v3.3.0-56_*-release.apk' -D release-assets
-          mv release-assets/KernelSU_v3.3.0-56_*-release.apk \
-             release-assets/KernelSU-manager.apk
-          gh release download v0.0.68 -R rrr333nnn333/BRENE \
-            -p 'BRENE-v0.0.68.zip' -D release-assets
-          gh release download v2.0.0 -R maxsteeel/nomount \
-            -p 'NoMount-v2.0.0-release.zip' -D release-assets
-          mv release-assets/NoMount-v2.0.0-release.zip \
-             release-assets/NoMount-v2.0.0.zip
+          # and follows asset redirects. The companion assets are immutable
+          # copies published with stormbreaker-v111, so upstream tag churn
+          # cannot break this build; upstream releases are the fallback.
+          from_ours() { gh release download stormbreaker-v111 \
+            -R "$GITHUB_REPOSITORY" -p "$1" -D release-assets --clobber; }
+
+          if from_ours 'KernelSU-manager.apk'; then
+            echo "manager APK: from stormbreaker-v111 (backslashxx v3.3.0-56)"
+          else
+            for tag in v3.3.0-60 v3.3.0-55; do
+              gh release download "$tag" -R backslashxx/KernelSU \
+                -p 'KernelSU_v3.3.0-*_*-release.apk' -D release-assets \
+                --clobber && break
+            done
+            mv release-assets/KernelSU_v3.3.0-*_*-release.apk \
+               release-assets/KernelSU-manager.apk
+          fi
+
+          if from_ours 'BRENE-v0.0.68.zip'; then
+            echo "BRENE: from stormbreaker-v111"
+          else
+            gh release download v0.0.68 -R rrr333nnn333/BRENE \
+              -p 'BRENE-v0.0.68.zip' -D release-assets --clobber
+          fi
+
+          if from_ours 'NoMount-v2.0.0.zip'; then
+            echo "NoMount: from stormbreaker-v111"
+          else
+            gh release download v2.0.0 -R maxsteeel/nomount \
+              -p 'NoMount-v2.0.0-release.zip' -D release-assets --clobber
+            mv release-assets/NoMount-v2.0.0-release.zip \
+               release-assets/NoMount-v2.0.0.zip
+          fi
           # sanity: the manager APK and modules must be zip/apk archives
           head -c2 release-assets/KernelSU-manager.apk | grep -q PK
           head -c2 release-assets/BRENE-v0.0.68.zip | grep -q PK
