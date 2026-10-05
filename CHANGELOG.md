@@ -3,6 +3,13 @@
 Full feature documentation lives in RELEASE_NOTES.md (repo). This file is
 what gets attached to each release: only what changed in that build.
 
+## #112 — BBRplus replaces BBR as the default congestion control
+• **Plain BBR v1 is gone** — `net/ipv4/tcp_bbr.c` is removed; nothing named `bbr` is built or selectable in this kernel any more
+• **BBRplus is the system default** (`CONFIG_DEFAULT_TCP_CONG="bbrplus"`): Google's BBR v1 with BBR v2 backports — ACK-aggregation tracking (`bbr_extra_acked`, 10-round-trip window, 100 ms cap) plus a variable PROBE_BW gain-cycle length with randomized phase start. The ACK fix is the one that matters on mobile data: when GRO/delayed ACKs compress the ACK stream, plain v1 underestimates the delivery rate and under-paces
+• Ported from the ApexKernel sm6250 tree (itself derived from Google's `tcp_bbr.c`, Dual BSD/GPL). One local change needed: `tcp_snd_wnd_test()` is no longer `static` in `tcp_output.c` so the congestion control can call it
+• **CUBIC / Vegas / Westwood+ / BIC / HTCP stay built in** and are switchable at runtime: `echo cubic > /proc/sys/net/ipv4/tcp_congestion_control`
+• CI gate updated to require `CONFIG_TCP_CONG_BBRPLUS=y` with `DEFAULT_TCP_CONG="bbrplus"`; `CONFIG_TCP_CONG_BBR` and the `DEFAULT_BBR` choice entry no longer exist
+
 ## #111 — back to the v93 lineage: backslashxx driver v3.3.0-56, one manager only
 • **Base is the original v93 tree again** (run #93, commit `d62bca985`): MGLRU compiled in, the Droidspaces container/namespace fragment (SYSVIPC, mqueue, PID/USER namespaces, cgroup device/pids/net_prio, nftables, bridge netfilter, xt addrtype) compiled in, BFQ default I/O scheduler, stock VM sysctls (no RAM-tier tuning), stock TCP sysctls with BBR still the default congestion control and fq_codel built in but not the default. The #96–#110 tuning lineage is withdrawn
 • **KernelSU driver synced v3.3.0-52 → v3.3.0-56** (`KSU_VERSION 32657`, upstream commit `1f47db46`): upstream v3.3.0-56 taken wholesale (16 files) plus the new `EVENT_SERVICES` supercall (services start/skip handling). The SUSFS v2.3.0 integration and the manager-certificate entry stay local, as always

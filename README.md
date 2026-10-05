@@ -39,7 +39,7 @@ One zip for all four — it ships its own DTB and DTBO.
 - HZ 300 for finer UI scheduling; PSI for modern Android
 
 ### Networking
-- **BBR** system default congestion control; Vegas, Westwood+, BIC and HTCP also built in
+- **BBRplus** system default congestion control — Google's BBR v1 with BBR v2 backports (ACK-aggregation tracking + variable PROBE_BW cycle), which fixes v1's under-pacing when mobile-data ACKs arrive compressed. **Plain BBR v1 is not built**; Vegas, Westwood+, BIC and HTCP remain selectable
 - **fq_codel** and **fq** packet schedulers built in — the default qdisc is the stock `pfifo_fast` in this lineage; select fq_codel per interface with `tc qdisc replace`
 - TCP sysctls are stock (the #105 `net_tune` defaults are not in this build); WiFi guidance (the ROM's `WCNSS_qcom_cfg.ini`) in RELEASE_NOTES
 
