@@ -3,11 +3,11 @@
 Full feature documentation lives in RELEASE_NOTES.md (repo). This file is
 what gets attached to each release: only what changed in that build.
 
-## #116 — BBRplus added as a selectable congestion control (BBR stays the default)
+## #117 — BBRplus added as a selectable congestion control (BBR stays the default)
 • **BBR remains the system default** (`CONFIG_DEFAULT_TCP_CONG="bbr"`) — the earlier swap was reverted; `net/ipv4/tcp_bbr.c` is back in the tree
 • **BBRplus is now built in alongside it** (`CONFIG_TCP_CONG_BBRPLUS=y`): Google's BBR v1 with BBR v2 backports — ACK-aggregation tracking (`bbr_extra_acked`, 10-round-trip window, 100 ms cap) plus a variable PROBE_BW gain-cycle length with randomized phase start. The ACK fix is the one that matters on mobile data: when GRO/delayed ACKs compress the ACK stream, plain v1 underestimates the delivery rate and under-paces
 • Switch at runtime, no reboot: `echo bbrplus > /proc/sys/net/ipv4/tcp_congestion_control` (back to `echo bbr > ...`)
-• Ported from the ApexKernel sm6250 tree (itself derived from Google's `tcp_bbr.c`, Dual BSD/GPL), adapted to this 4.14 tree: `tcp_snd_wnd_test()` un-static'd, `tcp_tso_autosize()` computed inline, `.min_tso_segs` instead of the 5.x `.tso_segs_goal` ops field, and the struct sized to fit the 88-byte `icsk_ca_priv`
+• Ported from the ApexKernel sm6250 tree (itself derived from Google's `tcp_bbr.c`, Dual BSD/GPL), adapted to this 4.14 tree: `tcp_snd_wnd_test()` un-static'd, `tcp_tso_autosize()` computed inline, `.min_tso_segs` instead of the 5.x `.tso_segs_goal` ops field, and `ICSK_CA_PRIV_SIZE` widened from 88 to 112 bytes (`icsk_ca_priv` 11 → 14 u64) so the struct fits — the same change the ApexKernel tree carries, costing 24 bytes per TCP socket
 • CI gate now requires `CONFIG_TCP_CONG_BBR=y`, `CONFIG_TCP_CONG_BBRPLUS=y` and `DEFAULT_TCP_CONG="bbr"`
 
 ## #111 — back to the v93 lineage: backslashxx driver v3.3.0-56, one manager only
