@@ -3,12 +3,12 @@
 Full feature documentation lives in RELEASE_NOTES.md (repo). This file is
 what gets attached to each release: only what changed in that build.
 
-## #112 — BBRplus replaces BBR as the default congestion control
-• **Plain BBR v1 is gone** — `net/ipv4/tcp_bbr.c` is removed; nothing named `bbr` is built or selectable in this kernel any more
-• **BBRplus is the system default** (`CONFIG_DEFAULT_TCP_CONG="bbrplus"`): Google's BBR v1 with BBR v2 backports — ACK-aggregation tracking (`bbr_extra_acked`, 10-round-trip window, 100 ms cap) plus a variable PROBE_BW gain-cycle length with randomized phase start. The ACK fix is the one that matters on mobile data: when GRO/delayed ACKs compress the ACK stream, plain v1 underestimates the delivery rate and under-paces
-• Ported from the ApexKernel sm6250 tree (itself derived from Google's `tcp_bbr.c`, Dual BSD/GPL). One local change needed: `tcp_snd_wnd_test()` is no longer `static` in `tcp_output.c` so the congestion control can call it
-• **CUBIC / Vegas / Westwood+ / BIC / HTCP stay built in** and are switchable at runtime: `echo cubic > /proc/sys/net/ipv4/tcp_congestion_control`
-• CI gate updated to require `CONFIG_TCP_CONG_BBRPLUS=y` with `DEFAULT_TCP_CONG="bbrplus"`; `CONFIG_TCP_CONG_BBR` and the `DEFAULT_BBR` choice entry no longer exist
+## #116 — BBRplus added as a selectable congestion control (BBR stays the default)
+• **BBR remains the system default** (`CONFIG_DEFAULT_TCP_CONG="bbr"`) — the earlier swap was reverted; `net/ipv4/tcp_bbr.c` is back in the tree
+• **BBRplus is now built in alongside it** (`CONFIG_TCP_CONG_BBRPLUS=y`): Google's BBR v1 with BBR v2 backports — ACK-aggregation tracking (`bbr_extra_acked`, 10-round-trip window, 100 ms cap) plus a variable PROBE_BW gain-cycle length with randomized phase start. The ACK fix is the one that matters on mobile data: when GRO/delayed ACKs compress the ACK stream, plain v1 underestimates the delivery rate and under-paces
+• Switch at runtime, no reboot: `echo bbrplus > /proc/sys/net/ipv4/tcp_congestion_control` (back to `echo bbr > ...`)
+• Ported from the ApexKernel sm6250 tree (itself derived from Google's `tcp_bbr.c`, Dual BSD/GPL), adapted to this 4.14 tree: `tcp_snd_wnd_test()` un-static'd, `tcp_tso_autosize()` computed inline, `.min_tso_segs` instead of the 5.x `.tso_segs_goal` ops field, and the struct sized to fit the 88-byte `icsk_ca_priv`
+• CI gate now requires `CONFIG_TCP_CONG_BBR=y`, `CONFIG_TCP_CONG_BBRPLUS=y` and `DEFAULT_TCP_CONG="bbr"`
 
 ## #111 — back to the v93 lineage: backslashxx driver v3.3.0-56, one manager only
 • **Base is the original v93 tree again** (run #93, commit `d62bca985`): MGLRU compiled in, the Droidspaces container/namespace fragment (SYSVIPC, mqueue, PID/USER namespaces, cgroup device/pids/net_prio, nftables, bridge netfilter, xt addrtype) compiled in, BFQ default I/O scheduler, stock VM sysctls (no RAM-tier tuning), stock TCP sysctls with BBR still the default congestion control and fq_codel built in but not the default. The #96–#110 tuning lineage is withdrawn

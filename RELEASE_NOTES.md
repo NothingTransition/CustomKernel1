@@ -34,8 +34,9 @@ Linux 4.14.357-openela · built with Clang/LLVM 18 · A-only flash
 - **Multigenerational LRU (MGLRU)** — the backport is compiled in (`CONFIG_LRU_GEN=y`) and stays **off at runtime** by default (`/sys/kernel/mm/lru_gen/enabled` turns it on). Source and `Documentation/vm/multigen_lru.rst` are in the tree
 
 ### Networking
-- **BBRplus** congestion control — the system default. Google's BBR v1 with BBR v2 backports: ACK-aggregation tracking (`bbr_extra_acked`, 10-round-trip window, 100 ms cap) plus a variable PROBE_BW gain-cycle length with randomized phase start. The ACK fix is the point on cellular — when GRO and delayed ACKs compress the ACK stream, plain BBR v1 underestimates the delivery rate and under-paces, and BBRplus corrects for that
-- **Plain BBR v1 is not compiled in** (`tcp_bbr.c` is gone). CUBIC, **Vegas, Westwood+, BIC and HTCP** remain built in and switchable per-route/app
+- **TCP BBR** congestion control — compiled in and set as the **system default**
+- **BBRplus** is built in alongside it as a selectable option (BBR v1 + BBR v2 backports: ACK-aggregation tracking with a 10-round-trip window and 100 ms cap, plus a variable PROBE_BW gain-cycle length with randomized phase start). Switch at runtime with `echo bbrplus > /proc/sys/net/ipv4/tcp_congestion_control`
+- **CUBIC, Vegas, Westwood+, BIC and HTCP** are built in too — switchable per-route/app
 - **FQ_CODEL** and **FQ** packet schedulers built in — the default qdisc is the stock `pfifo_fast` in this lineage; switch an interface with `tc qdisc replace dev <if> root fq_codel`
 - TCP sysctls are stock — the #105 `net_tune` defaults are not in this build (see the networking section below for the values and how to set them if you want them)
 - BPF / eBPF support (syscall + JIT)
@@ -78,11 +79,11 @@ Known gaps, stated plainly:
 
 ### Network tuning: mobile data + WiFi
 
-The kernel cannot raise what the radio gives you — peak throughput is modem firmware, carrier provisioning, band and signal. What it *can* do is use the link well. This lineage ships **stock TCP sysctls** with **BBRplus already the default congestion control**, so the one change with real effect under load is in. The #105 `net_tune` defaults (`fq_codel` as default qdisc, `tcp_slow_start_after_idle=0`, `tcp_mtu_probing=1`) are **not** applied at boot here; they remain ordinary sysctls you can set yourself at runtime (root):
+The kernel cannot raise what the radio gives you — peak throughput is modem firmware, carrier provisioning, band and signal. What it *can* do is use the link well. This lineage ships **stock TCP sysctls** with **BBR already the default congestion control**, so the one change with real effect under load is in. The #105 `net_tune` defaults (`fq_codel` as default qdisc, `tcp_slow_start_after_idle=0`, `tcp_mtu_probing=1`) are **not** applied at boot here; they remain ordinary sysctls you can set yourself at runtime (root):
 
 | Knob | This build | #105 value, if you want it | Why anyone wants it |
 |---|---|---|---|
-| `tcp_congestion_control` | `bbrplus` | `bbr` | BBRplus (and BBR generally) behaves far better than CUBIC on lossy, high-RTT cellular links; BBRplus also fixes v1's under-pacing on compressed ACKs |
+| `tcp_congestion_control` | `bbr` | `bbr` | BBR behaves far better than CUBIC on lossy, high-RTT cellular links. BBRplus is also built in — same idea plus the ACK-aggregation fix for compressed ACKs: `echo bbrplus > /proc/sys/net/ipv4/tcp_congestion_control` |
 | `net.core.default_qdisc` | `pfifo_fast` (stock) | `fq_codel` | fq_codel keeps queue delay low, so uploads stop ballooning RTT |
 | `tcp_slow_start_after_idle` | `1` (stock) | `0` | Keeps the congestion window across idle periods instead of re-ramping |
 | `tcp_mtu_probing` | `0` (stock) | `1` | Finds a working MSS when the path drops ICMP "fragmentation needed" |
@@ -98,7 +99,7 @@ echo 1 > /proc/sys/net/ipv4/tcp_mtu_probing
 Verify what you have (root):
 
 ```
-cat /proc/sys/net/ipv4/tcp_congestion_control      # bbrplus
+cat /proc/sys/net/ipv4/tcp_congestion_control      # bbr
 cat /proc/sys/net/core/default_qdisc               # pfifo_fast unless you changed it
 cat /proc/sys/net/ipv4/tcp_slow_start_after_idle   # 1
 cat /proc/sys/net/ipv4/tcp_mtu_probing             # 0

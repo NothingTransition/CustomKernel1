@@ -169,11 +169,12 @@ jobs:
           require_config 'CONFIG_EXT4_ENCRYPTION=y'
           require_config 'CONFIG_FS_ENCRYPTION=y'
           require_config 'CONFIG_NETFILTER_XT_TARGET_TRACE=y'
-          # Mobile-data default: BBRplus (BBR v1 + BBR v2 ACK aggregation)
-          # is the congestion control we ship; plain BBR v1 is not built at
-          # all. fq_codel is compiled in while the default qdisc stays stock.
+          # Mobile-data default: BBR. BBRplus (BBR v1 + BBR v2 ACK
+          # aggregation) is built in alongside it as a switchable option.
+          # fq_codel is compiled in while the default qdisc stays stock.
+          require_config 'CONFIG_TCP_CONG_BBR=y'
           require_config 'CONFIG_TCP_CONG_BBRPLUS=y'
-          require_config 'CONFIG_DEFAULT_TCP_CONG="bbrplus"'
+          require_config 'CONFIG_DEFAULT_TCP_CONG="bbr"'
           require_config '# CONFIG_NET_SCH_DEFAULT is not set'
           require_config 'CONFIG_NET_SCH_FQ_CODEL=y'
           # v93 lineage: MGLRU is compiled in (LRU_GEN=y).
