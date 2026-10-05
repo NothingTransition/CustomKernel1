@@ -372,8 +372,28 @@ jobs:
           # Manager APK: pinned to the BakaSU release the vendored driver
           # comes from. The version code in the asset name (35171) is the
           # same KSU_VERSION the driver reports, so manager and kernel agree
-          # on the ABI. Our own release keeps an immutable copy as fallback,
-          # so upstream asset churn cannot break a build.
+          # on the ABI.
+          #
+          # Fallback: scan our own releases (newest first) for an immutable
+          # copy of that exact APK. Older releases carry the retired
+          # backslashxx manager under a different name (KernelSU-manager.apk,
+          # version code 32655) which talks to a different driver ABI, so a
+          # name match on "BakaSU-manager.apk" is required - never fall back
+          # to the stale manager.
+          pinned_manager_from_own_releases() {
+            local tag
+            for tag in $(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=40" \
+                           --jq '.[].tag_name'); do
+              if gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag" \
+                   --jq '.assets[].name' | grep -qx 'BakaSU-manager.apk'; then
+                gh release download "$tag" -R "$GITHUB_REPOSITORY" \
+                  -p 'BakaSU-manager.apk' -D release-assets --clobber \
+                  && { echo "manager APK: pinned copy from $tag"; return 0; }
+              fi
+            done
+            return 1
+          }
+
           got_manager=0
           for tag in v4.2.0-rc3; do
             if gh release download "$tag" -R Baka-SU/BakaSU \
@@ -387,8 +407,11 @@ jobs:
             fi
           done
           if [ "$got_manager" -eq 0 ]; then
-            from_ours 'BakaSU-manager.apk'
-            echo "manager APK: pinned copy from an earlier release"
+            pinned_manager_from_own_releases || {
+              echo "::error::BakaSU manager APK unavailable: the Baka-SU/BakaSU $tag" \
+                   "download failed and no release of ours carries BakaSU-manager.apk yet"
+              exit 1
+            }
           fi
 
           if from_ours 'BRENE-v0.0.68.zip'; then
@@ -410,6 +433,11 @@ jobs:
           head -c2 release-assets/BakaSU-manager.apk | grep -q PK
           head -c2 release-assets/BRENE-v0.0.68.zip | grep -q PK
           head -c2 release-assets/NoMount-v2.0.0.zip | grep -q PK
+          # An HTML error page or a truncated download also starts with bytes
+          # that can pass a header check, so look inside the APK: a real one
+          # has AndroidManifest.xml and a dex payload.
+          unzip -l release-assets/BakaSU-manager.apk | grep -q 'AndroidManifest.xml'
+          unzip -l release-assets/BakaSU-manager.apk | grep -qE 'classes[0-9]*\.dex'
           ls -la release-assets/
 
       - name: Prepare release notes
@@ -422,7 +450,21 @@ jobs:
             f && /^## #/ {exit}
             f {print}
           ' CHANGELOG.md > release-notes.md
+          if ! grep -q . release-notes.md; then
+            # Run numbers and changelog entries can drift apart (a run killed
+            # by an infrastructure outage still consumes its number, and the
+            # retry lands on the next one). Ship the newest entry with a note
+            # instead of dumping the file header.
+            awk '/^## #/ {if (f) exit; f=1} f' CHANGELOG.md > entry.md
+            {
+              echo "> No changelog entry is numbered for build #${GITHUB_RUN_NUMBER};"
+              echo "> this build ships the newest entry in CHANGELOG.md."
+              echo
+              cat entry.md
+            } > release-notes.md
+          fi
           grep -q . release-notes.md || head -8 CHANGELOG.md > release-notes.md
+          head -n 3 release-notes.md
 
       - name: Create numbered release (history preserved)
         env:
