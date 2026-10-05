@@ -381,11 +381,18 @@ static void bbr_set_tso_segs_goal(struct sock *sk)
 {
     struct tcp_sock *tp = tcp_sk(sk);
     struct bbr *bbr = inet_csk_ca(sk);
-    u32 min_segs;
+    u32 segs, bytes;
 
-    min_segs = sk->sk_pacing_rate < (bbr_min_tso_rate >> 3) ? 1 : 2;
-    bbr->tso_segs_goal = min(tcp_tso_autosize(sk, tp->mss_cache, min_segs),
-                 0x7FU);
+    /* Sort of tcp_tso_autosize() but ignoring
+     * the driver provided gso_size (tcp_tso_autosize() is file-static in
+     * this 4.14 tree, so compute the same thing here).
+     */
+    bytes = min_t(u32, sk->sk_pacing_rate >> sk->sk_pacing_shift,
+              GSO_MAX_SIZE - 1 - MAX_TCP_HEADER);
+    segs = max_t(u32, bytes / tp->mss_cache,
+             sk->sk_pacing_rate < (bbr_min_tso_rate >> 3) ? 1 : 2);
+
+    bbr->tso_segs_goal = min_t(u32, segs, 0x7FU);
 }
 
 /* Save "last known good" cwnd so we can restore it after losses or PROBE_RTT */
