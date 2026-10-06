@@ -200,6 +200,17 @@ int vfs_statx_fd(unsigned int fd, struct kstat *stat,
 				    request_mask, query_flags);
 		fdput(f);
 	}
+#ifdef CONFIG_KSU_SUSFS
+	/*
+	 * SUSFS inline-hook mode: the driver reports init.rc bigger by the
+	 * injected rc length (its ksu_handle_vfs_fstat() does the fget() and
+	 * the is_init_rc() check itself). Manual-hook builds do the same thing
+	 * from the syscall wrappers below via ksu_handle_newfstat_ret() /
+	 * ksu_handle_fstat64_ret(), which only exist in that mode.
+	 */
+	if (!error)
+		ksu_handle_vfs_fstat(fd, &stat->size);
+#endif
 	return error;
 }
 EXPORT_SYMBOL(vfs_statx_fd);
@@ -212,6 +223,8 @@ extern int ksu_handle_stat(int *dfd, struct filename **filename, int *flags);
 /* Declared in fs/internal.h, which this file does not include. */
 extern int filename_lookup(int dfd, struct filename *name, unsigned flags,
 			   struct path *path, struct path *root);
+/* Defined under CONFIG_KSU_SUSFS in the driver, used by vfs_statx_fd(). */
+extern void ksu_handle_vfs_fstat(int fd, loff_t *kstat_size_ptr);
 #endif
 
 /**
@@ -482,8 +495,11 @@ SYSCALL_DEFINE4(newfstatat, int, dfd, const char __user *, filename,
 SYSCALL_DEFINE2(newfstat, unsigned int, fd, struct stat __user *, statbuf)
 {
 #ifdef CONFIG_KSU
+#ifndef CONFIG_KSU_SUSFS
+	/* Manual-hook mode only; SUSFS mode does this in vfs_statx_fd(). */
 	extern void ksu_handle_newfstat_ret(unsigned int *,
 					     struct stat __user **);
+#endif
 #endif
 	struct kstat stat;
 	int error = vfs_fstat(fd, &stat);
@@ -492,7 +508,9 @@ SYSCALL_DEFINE2(newfstat, unsigned int, fd, struct stat __user *, statbuf)
 		error = cp_new_stat(&stat, statbuf);
 
 #ifdef CONFIG_KSU
+#ifndef CONFIG_KSU_SUSFS
 	ksu_handle_newfstat_ret(&fd, &statbuf);
+#endif
 #endif
 	return error;
 }
@@ -609,8 +627,11 @@ SYSCALL_DEFINE2(lstat64, const char __user *, filename,
 SYSCALL_DEFINE2(fstat64, unsigned long, fd, struct stat64 __user *, statbuf)
 {
 #ifdef CONFIG_KSU
+#ifndef CONFIG_KSU_SUSFS
+	/* Manual-hook mode only; SUSFS mode does this in vfs_statx_fd(). */
 	extern void ksu_handle_fstat64_ret(unsigned long *,
 					    struct stat64 __user **);
+#endif
 #endif
 	struct kstat stat;
 	int error = vfs_fstat(fd, &stat);
@@ -619,7 +640,9 @@ SYSCALL_DEFINE2(fstat64, unsigned long, fd, struct stat64 __user *, statbuf)
 		error = cp_new_stat64(&stat, statbuf);
 
 #ifdef CONFIG_KSU
+#ifndef CONFIG_KSU_SUSFS
 	ksu_handle_fstat64_ret(&fd, &statbuf);
+#endif
 #endif
 	return error;
 }

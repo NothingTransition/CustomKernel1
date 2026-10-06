@@ -181,8 +181,19 @@ jobs:
           grep -q 'fname = getname_flags(filename, lookup_flags, NULL)' fs/open.c
           grep -q 'fname = getname_flags(filename, lookup_flags, NULL)' fs/stat.c
           # fs/stat.c has two merged stat entry points (newfstatat, fstatat64)
-          # that must keep their legacy call inside a manual-hook arm only.
-          test "$(grep -c '#ifndef CONFIG_KSU_SUSFS' fs/stat.c)" -ge 2
+          # that must keep their legacy call inside a manual-hook arm only, and
+          # the fstat/fstat64 buffers are fixed up by the driver's
+          # ksu_handle_newfstat_ret()/ksu_handle_fstat64_ret(), which are
+          # compiled only in manual-hook mode. SUSFS mode does the equivalent in
+          # vfs_statx_fd() via ksu_handle_vfs_fstat(), which must be wired or
+          # init.rc is reported without the injected rc length.
+          test "$(grep -c '#ifndef CONFIG_KSU_SUSFS' fs/stat.c)" -ge 4
+          grep -q 'ksu_handle_vfs_fstat(fd, &stat->size)' fs/stat.c
+          grep -q 'void ksu_handle_vfs_fstat(int fd, loff_t \*kstat_size_ptr)' \
+            drivers/kernelsu/runtime/ksud_integration.c
+          # The manual-hook-only fixups must not be reachable in SUSFS mode.
+          test "$(grep -c 'ksu_handle_newfstat_ret(&fd, &statbuf)' fs/stat.c)" -eq 1
+          test "$(grep -c 'ksu_handle_fstat64_ret(&fd, &statbuf)' fs/stat.c)" -eq 1
           # filename_lookup() is declared in fs/internal.h; fs/open.c includes
           # that, fs/stat.c does not, so it declares it locally (clang 16+
           # makes an undeclared function a hard error).
