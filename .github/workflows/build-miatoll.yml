@@ -165,6 +165,28 @@ jobs:
           require_config 'CONFIG_STREAM_PARSER=y'
           require_config 'CONFIG_NET_SOCK_MSG=y'
 
+          # The arm64 eBPF JIT is the one piece of the BPF subsystem this tree
+          # did NOT get from its 5.10-era backport (kernel/bpf, the uapi and
+          # the verifier are 5.10; arch/arm64/net/bpf_jit_comp.c is the 4.14
+          # switch). It must know BPF_JMP32: the verifier emits JMP32 itself
+          # when it rewrites 32-bit div/mod (kernel/bpf/verifier.c,
+          # fixup_bpf_calls()) and clang emits it for 32-bit compares with
+          # -mcpu=v3. Without the cases, that insn hits 'default:' in
+          # build_insn() -> "unknown opcode" -> -EINVAL, and with
+          # CONFIG_BPF_JIT_ALWAYS_ON=y there is no interpreter fallback, so the
+          # program cannot be loaded at all. 22 cases = 20 compares + 2 JSET,
+          # and the 32-bit forms must compare/tst/mov the 32-bit width
+          # (is64 covers BPF_JMP, BPF_JMP32 stays narrow).
+          test "$(grep -c 'case BPF_JMP32' arch/arm64/net/bpf_jit_comp.c)" -ge 22
+          grep -q 'BPF_CLASS(code) == BPF_JMP;' arch/arm64/net/bpf_jit_comp.c
+          grep -q 'emit(A64_CMP(is64, dst, src), ctx);' arch/arm64/net/bpf_jit_comp.c
+          grep -q 'emit(A64_CMP(is64, dst, tmp), ctx);' arch/arm64/net/bpf_jit_comp.c
+          grep -q 'emit(A64_TST(is64, dst, src), ctx);' arch/arm64/net/bpf_jit_comp.c
+          grep -q 'emit(A64_TST(is64, dst, tmp), ctx);' arch/arm64/net/bpf_jit_comp.c
+          # ... and the verifier's own JMP32 rewrite must stay, otherwise the
+          # JIT gate above could be "satisfied" by deleting the feature.
+          grep -q 'BPF_RAW_INSN((is64 ? BPF_JMP : BPF_JMP32) |' kernel/bpf/verifier.c
+
           # SUSFS inline-hook call shape. In this mode the driver takes a real
           # 'struct filename **' at faccessat/stat and rewrites ->name in
           # place, so the caller must build the filename with getname_flags()
