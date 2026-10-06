@@ -18,7 +18,6 @@
 #include <linux/pagemap.h>
 #include <linux/compat.h>
 #ifdef CONFIG_KSU_SUSFS
-#include <linux/jump_label.h>
 #include <linux/susfs_def.h>
 #include <linux/version.h>
 #endif
@@ -185,12 +184,6 @@ EXPORT_SYMBOL(vfs_getattr);
  *
  * 0 will be returned on success, and a -ve error code if unsuccessful.
  */
-#ifdef CONFIG_KSU_SUSFS
-/* SUSFS inline-hook mode: defined in the driver (runtime/ksud_integration.c)
- * and used below to report init.rc with the injected rc length. */
-extern void ksu_handle_vfs_fstat(int fd, loff_t *kstat_size_ptr);
-#endif
-
 int vfs_statx_fd(unsigned int fd, struct kstat *stat,
 		 u32 request_mask, unsigned int query_flags)
 {
@@ -206,29 +199,17 @@ int vfs_statx_fd(unsigned int fd, struct kstat *stat,
 				    request_mask, query_flags);
 		fdput(f);
 	}
-#ifdef CONFIG_KSU_SUSFS
-	/*
-	 * SUSFS inline-hook mode: the driver reports init.rc bigger by the
-	 * injected rc length (its ksu_handle_vfs_fstat() does the fget() and
-	 * the is_init_rc() check itself). Manual-hook builds do the same thing
-	 * from the syscall wrappers below via ksu_handle_newfstat_ret() /
-	 * ksu_handle_fstat64_ret(), which only exist in that mode.
-	 */
-	if (!error)
-		ksu_handle_vfs_fstat(fd, &stat->size);
-#endif
 	return error;
 }
 EXPORT_SYMBOL(vfs_statx_fd);
 
 #ifdef CONFIG_KSU_SUSFS
 extern bool __ksu_is_allow_uid_for_current(uid_t uid);
-extern struct static_key_true ksu_su_compat_enabled;
-/* SUSFS inline-hook mode: the hook takes a real struct filename ** */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 1, 0)
 extern int ksu_handle_stat(int *dfd, struct filename **filename, int *flags);
-/* Declared in fs/internal.h, which this file does not include. */
-extern int filename_lookup(int dfd, struct filename *name, unsigned flags,
-			   struct path *path, struct path *root);
+#else
+extern int ksu_handle_stat(int *dfd, const char __user **filename_user, int *flags);
+#endif
 #endif
 
 /**
@@ -252,8 +233,17 @@ int vfs_statx(int dfd, const char __user *filename, int flags,
 	struct path path;
 	int error = -EINVAL;
 	unsigned int lookup_flags = LOOKUP_FOLLOW | LOOKUP_AUTOMOUNT;
+
 #ifdef CONFIG_KSU_SUSFS
-	struct filename *fname = NULL;
+	if (likely(susfs_is_current_proc_umounted())) {
+		goto orig_flow;
+	}
+
+	if (unlikely(__ksu_is_allow_uid_for_current(current_uid().val))) {
+		ksu_handle_stat(&dfd, &filename, &flags);
+	}
+
+orig_flow:
 #endif
 
 	if ((flags & ~(AT_SYMLINK_NOFOLLOW | AT_NO_AUTOMOUNT |
@@ -268,36 +258,7 @@ int vfs_statx(int dfd, const char __user *filename, int flags,
 		lookup_flags |= LOOKUP_EMPTY;
 
 retry:
-#ifdef CONFIG_KSU_SUSFS
-	/*
-	 * SUSFS inline-hook mode: the driver rewrites fname->name in place
-	 * (/system/bin/su -> /system/bin/sh) and this lookup then resolves the
-	 * rewritten name, so the filename has to be built here instead of by
-	 * user_path_at(). filename_lookup() consumes fname itself - there is no
-	 * putname() on this path (see the SUSFS kernel-side reference patch).
-	 */
-	fname = getname_flags(filename, lookup_flags, NULL);
-	if (IS_ERR(fname)) {
-		error = PTR_ERR(fname);
-		fname = NULL;
-		goto out;
-	}
-
-	/* Already umounted, or marked "no su" by the manager: nothing to do. */
-	if (likely(susfs_is_current_proc_umounted()) ||
-	    likely(susfs_is_current_proc_no_su()))
-		goto orig_flow;
-
-	if (static_branch_unlikely(&ksu_su_compat_enabled)) {
-		if (unlikely(__ksu_is_allow_uid_for_current(current_uid().val)))
-			ksu_handle_stat(&dfd, &fname, &flags);
-	}
-
-orig_flow:
-	error = filename_lookup(dfd, fname, lookup_flags, &path, NULL);
-#else
 	error = user_path_at(dfd, filename, lookup_flags, &path);
-#endif
 	if (error)
 		goto out;
 
@@ -476,18 +437,9 @@ SYSCALL_DEFINE4(newfstatat, int, dfd, const char __user *, filename,
 	int error;
 
 #ifdef CONFIG_KSU
-#ifndef CONFIG_KSU_SUSFS
-	/*
-	 * Manual-hook mode only: this ABI (a raw user pointer) belongs to that
-	 * mode. In SUSFS inline-hook mode the single funnel is vfs_statx(): it
-	 * builds the filename, lets the driver rewrite it in place and only then
-	 * looks it up, so hooking here too would call the hook twice and with
-	 * the wrong argument type.
-	 */
 	extern int ksu_handle_stat(int *, const char __user **, int *);
 
 	ksu_handle_stat(&dfd, &filename, &flag);
-#endif
 #endif
 	error = vfs_fstatat(dfd, filename, &stat, flag);
 	if (error)
@@ -498,12 +450,9 @@ SYSCALL_DEFINE4(newfstatat, int, dfd, const char __user *, filename,
 
 SYSCALL_DEFINE2(newfstat, unsigned int, fd, struct stat __user *, statbuf)
 {
-#ifdef CONFIG_KSU
-#ifndef CONFIG_KSU_SUSFS
-	/* Manual-hook mode only; SUSFS mode does this in vfs_statx_fd(). */
+#if defined(CONFIG_KSU) && !defined(CONFIG_KSU_KPROBES_KSUD)
 	extern void ksu_handle_newfstat_ret(unsigned int *,
 					     struct stat __user **);
-#endif
 #endif
 	struct kstat stat;
 	int error = vfs_fstat(fd, &stat);
@@ -511,10 +460,8 @@ SYSCALL_DEFINE2(newfstat, unsigned int, fd, struct stat __user *, statbuf)
 	if (!error)
 		error = cp_new_stat(&stat, statbuf);
 
-#ifdef CONFIG_KSU
-#ifndef CONFIG_KSU_SUSFS
+#if defined(CONFIG_KSU) && !defined(CONFIG_KSU_KPROBES_KSUD)
 	ksu_handle_newfstat_ret(&fd, &statbuf);
-#endif
 #endif
 	return error;
 }
@@ -630,12 +577,9 @@ SYSCALL_DEFINE2(lstat64, const char __user *, filename,
 
 SYSCALL_DEFINE2(fstat64, unsigned long, fd, struct stat64 __user *, statbuf)
 {
-#ifdef CONFIG_KSU
-#ifndef CONFIG_KSU_SUSFS
-	/* Manual-hook mode only; SUSFS mode does this in vfs_statx_fd(). */
+#if defined(CONFIG_KSU) && !defined(CONFIG_KSU_KPROBES_KSUD)
 	extern void ksu_handle_fstat64_ret(unsigned long *,
 					    struct stat64 __user **);
-#endif
 #endif
 	struct kstat stat;
 	int error = vfs_fstat(fd, &stat);
@@ -643,10 +587,8 @@ SYSCALL_DEFINE2(fstat64, unsigned long, fd, struct stat64 __user *, statbuf)
 	if (!error)
 		error = cp_new_stat64(&stat, statbuf);
 
-#ifdef CONFIG_KSU
-#ifndef CONFIG_KSU_SUSFS
+#if defined(CONFIG_KSU) && !defined(CONFIG_KSU_KPROBES_KSUD)
 	ksu_handle_fstat64_ret(&fd, &statbuf);
-#endif
 #endif
 	return error;
 }
@@ -658,18 +600,9 @@ SYSCALL_DEFINE4(fstatat64, int, dfd, const char __user *, filename,
 	int error;
 
 #ifdef CONFIG_KSU
-#ifndef CONFIG_KSU_SUSFS
-	/*
-	 * Manual-hook mode only: this ABI (a raw user pointer) belongs to that
-	 * mode. In SUSFS inline-hook mode the single funnel is vfs_statx(): it
-	 * builds the filename, lets the driver rewrite it in place and only then
-	 * looks it up, so hooking here too would call the hook twice and with
-	 * the wrong argument type.
-	 */
 	extern int ksu_handle_stat(int *, const char __user **, int *);
 
 	ksu_handle_stat(&dfd, &filename, &flag);
-#endif
 #endif
 	error = vfs_fstatat(dfd, filename, &stat, flag);
 	if (error)

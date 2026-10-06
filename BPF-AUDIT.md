@@ -1,3 +1,10 @@
+> **Update (build #131): the KernelSU driver was reverted from BakaSU v4.2.0-rc3 back to
+> backslashxx/KernelSU (now v3.3.0-62).** Sections 1, 2 and 5 below describe the BakaSU
+> integration as it stood during that experiment and are kept for the record — the SUSFS
+> v2.3.0 kernel side, NoMount and everything in section 4 (eBPF) are unaffected by the
+> revert. The BakaSU-specific hook sites (`ksu_handle_setresuid`, `ksu_handle_sys_read`,
+> `ksu_handle_input_handle_event`, `ksu_handle_vfs_fstat`) are no longer wired.
+
 # Stormbreaker — BPF requirement audit + BakaSU/SUSFS/NoMount wiring audit
 
 Repo `NothingTransition/CustomKernel1`, 4.14.357-openela base for miatoll (Redmi Note 9 Pro family).

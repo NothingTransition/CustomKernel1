@@ -32,7 +32,6 @@
 #include <linux/dnotify.h>
 #include <linux/compat.h>
 #ifdef CONFIG_KSU_SUSFS
-#include <linux/jump_label.h>
 #include <linux/susfs_def.h>
 #endif
 
@@ -372,21 +371,12 @@ SYSCALL_DEFINE3(faccessat, int, dfd, const char __user *, filename, int, mode)
 	struct vfsmount *mnt;
 	int res;
 	unsigned int lookup_flags = LOOKUP_FOLLOW;
-#ifdef CONFIG_KSU_SUSFS
-	struct filename *fname = NULL;
-	extern bool __ksu_is_allow_uid_for_current(uid_t uid);
-	extern struct static_key_true ksu_su_compat_enabled;
-	extern int ksu_handle_faccessat(int *, struct filename **, int *,
-					int *);
-#endif
 
 #ifdef CONFIG_KSU
-#ifndef CONFIG_KSU_SUSFS
 	extern int ksu_handle_faccessat(int *, const char __user **, int *,
-					int *);
+					  int *);
 
 	ksu_handle_faccessat(&dfd, &filename, &mode, NULL);
-#endif
 #endif
 	if (mode & ~S_IRWXO)	/* where's F_OK, X_OK, W_OK, R_OK? */
 		return -EINVAL;
@@ -429,35 +419,7 @@ SYSCALL_DEFINE3(faccessat, int, dfd, const char __user *, filename, int, mode)
 
 	old_cred = override_creds(override_cred);
 retry:
-#ifdef CONFIG_KSU_SUSFS
-	/*
-	 * SUSFS inline-hook mode: the driver rewrites fname->name in place
-	 * (/system/bin/su -> /system/bin/sh) and this lookup then resolves the
-	 * rewritten name, so the filename has to be built here instead of by
-	 * user_path_at(). filename_lookup() consumes fname itself - there is no
-	 * putname() on this path (see the SUSFS kernel-side reference patch).
-	 */
-	fname = getname_flags(filename, lookup_flags, NULL);
-	if (IS_ERR(fname)) {
-		res = PTR_ERR(fname);
-		fname = NULL;
-		goto out;
-	}
-
-	/* Processes the manager marked "no su" are never sucompat candidates. */
-	if (likely(susfs_is_current_proc_no_su()))
-		goto orig_flow;
-
-	if (static_branch_unlikely(&ksu_su_compat_enabled)) {
-		if (unlikely(__ksu_is_allow_uid_for_current(current_uid().val)))
-			ksu_handle_faccessat(&dfd, &fname, &mode, NULL);
-	}
-
-orig_flow:
-	res = filename_lookup(dfd, fname, lookup_flags, &path, NULL);
-#else
 	res = user_path_at(dfd, filename, lookup_flags, &path);
-#endif
 	if (res)
 		goto out;
 

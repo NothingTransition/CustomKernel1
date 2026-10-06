@@ -16,10 +16,9 @@ One zip for all four — it ships its own DTB and DTBO.
 ## Features
 
 ### Root & hiding
-- **KernelSU** built in — driver vendored from **Baka-SU/BakaSU `v4.2.0-rc3`** (formerly ReSukiSU), `KSU_VERSION 35171`; no kprobes, no daemon, no `/su` binary
-- **Only the BakaSU manager family is accepted**: managers signed with the BakaSU/ReSukiSU certificate (`0x377`) and managers carrying the official KernelSU certificate (`c371061b…`). The fork certificates the driver knows about (5ec1cff, rsuntk, SukiSU-Ultra, KOWX712) are deliberately left unaccepted — `CONFIG_KSU_MULTI_MANAGER_SUPPORT` is off
-- Manager APK attached to every release: **BakaSU `v4.2.0-rc3`** (`ReSukiSU_v4.2.0-rc3_35171-universal-release.apk`, shipped as `BakaSU-manager.apk`), the same version code the driver reports
-- **Hook method: SUSFS inline hooks** — tracepoint hooks are GKI 2.0 (5.10+) only and the plain manual hook carries no SUSFS, so the inline-hook mode is the one that pairs the driver with the v2.3.0 SUSFS kernel side. All seven hook sites it requires are in the tree and are verified by the driver's own `inline_hook_check.mk` at build time
+- **KernelSU** built in — driver vendored from backslashxx/KernelSU `v3.3.0-62` (`KSU_VERSION 32663`); no kprobes, no daemon, no `/su` binary
+- **Only the backslashxx/KernelSU manager family is accepted**: release managers signed with the public dummy.keystore (package-locked to `me.weishu.kernelsu`) and self-built managers carrying the official KernelSU certificate. Fork managers (KernelSU-Next, KOWX712, …) are deliberately rejected
+- Manager APK attached to every release: **KernelSU `v3.3.0-62`** (upstream build, shipped as `KernelSU-manager.apk`); the immutable copy on our `v111` release is the fallback
 - **SUSFS v2.3.0** — sus_path, sus_mount, sus_kstat, sus_map, spoof uname / cmdline+bootconfig, open_redirect, AVC log spoofing, KSU/SUSFS symbol hiding
 - **NoMount v2.0.0** — per-app directory hiding via keyring rules
 - **BRENE v0.0.68** module bundled — SUSFS rules control panel
@@ -64,7 +63,7 @@ Flash the release zip in recovery, reboot, install the manager APK. Done.
 The **#96–#110 lineage is withdrawn** (RAM-tier tuning, CFQ default, MGLRU and
 Droidspaces compiled out, GKI-style `fq_codel` default). Those releases
 (`v105`, `v108`, `v109`, `v110`) were deleted; the current build returns to the
-v93 base and moves forward from there with the BakaSU driver.
+v93 base and moves forward from there with the backslashxx driver.
 
 Boot status on **Infinity X 4.0 (A17)**: that ROM currently only boots the
 Imperial-X kernel reliably, so no Stormbreaker build is guaranteed there; the
@@ -85,7 +84,7 @@ CI enforces: no duplicate defconfig symbols, the required config set must be pre
 
 ## Credits
 
-CAF/OpenELA · Baka-SU (BakaSU, formerly ReSukiSU) · simonpunk/sidex15 (SUSFS) · maxsteeel (NoMount) · osm0sis (AnyKernel3) · Google (MGLRU)
+CAF/OpenELA · backslashxx (KernelSU) · simonpunk/sidex15 (SUSFS) · maxsteeel (NoMount) · osm0sis (AnyKernel3) · Google (MGLRU)
 
 ## License
 

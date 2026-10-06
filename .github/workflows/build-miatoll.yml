@@ -127,20 +127,17 @@ jobs:
             }
           }
 
-          # KernelSU: BakaSU driver v4.2.0-rc3, SUSFS inline-hook mode. The
-          # hook sites this mode needs are checked by the driver's own
-          # inline_hook_check.mk during the build; these assertions pin the
-          # configuration it was integrated against.
+          # KernelSU: backslashxx/KernelSU driver (scope-minimized manual
+          # hooks + SUSFS support). Kprobes, syscall-table tampering and the
+          # ARM64 branch-link hook stay off by design.
           require_config 'CONFIG_KSU=y'
-          require_config 'CONFIG_KSU_SUSFS=y'
-          require_config '# CONFIG_KSU_TRACEPOINT_HOOK is not set'
-          require_config '# CONFIG_KSU_MANUAL_HOOK is not set'
-          # Manager policy: BakaSU/ReSukiSU + official KernelSU only. Turning
-          # multi-manager support on would also accept the 5ec1cff, rsuntk,
-          # SukiSU-Ultra and KOWX712 fork managers.
-          require_config '# CONFIG_KSU_MULTI_MANAGER_SUPPORT is not set'
-          require_config '# CONFIG_KSU_DISABLE_MANAGER is not set'
-          require_config '# CONFIG_KSU_DISABLE_POLICY is not set'
+          if grep -q '^CONFIG_KSU_KPROBES_KSUD=y' out/.config; then
+            echo 'Kprobe hooks must remain disabled for manual integration' >&2
+            exit 1
+          fi
+          require_config '# CONFIG_KSU_HACK_ARM64_BRANCH_LINK is not set'
+          require_config '# CONFIG_KSU_TAMPER_SYSCALL_TABLE is not set'
+          require_config 'CONFIG_KSU_LSM_SECURITY_HOOKS=y'
           require_config 'CONFIG_KSU_SUSFS_SUS_PATH=y'
           require_config 'CONFIG_KSU_SUSFS_SUS_MOUNT=y'
           require_config 'CONFIG_KSU_SUSFS_SUS_KSTAT=y'
@@ -194,29 +191,19 @@ jobs:
           # JIT gate above could be "satisfied" by deleting the feature.
           grep -q 'BPF_RAW_INSN((is64 ? BPF_JMP : BPF_JMP32) |' kernel/bpf/verifier.c
 
-          # SUSFS inline-hook call shape. In this mode the driver takes a real
-          # 'struct filename **' at faccessat/stat and rewrites ->name in
-          # place, so the caller must build the filename with getname_flags()
-          # and then look it up with filename_lookup(). The manual-hook form
-          # (passing the raw 'const char __user *') also compiles, but makes
-          # the driver dereference a user pointer as a struct filename - that
-          # is a silent runtime bug, so it is rejected here.
-          # (The legacy manual-hook call stays in fs/open.c, but only inside
-          # its '#ifndef CONFIG_KSU_SUSFS' arm; the assertions below are what
-          # prove the SUSFS-mode path is the one that is compiled.)
-          grep -q 'ksu_handle_faccessat(&dfd, &fname, &mode, NULL)' fs/open.c
-          grep -q 'ksu_handle_stat(&dfd, &fname, &flags)' fs/stat.c
-          grep -q '#ifndef CONFIG_KSU_SUSFS' fs/open.c
-          grep -q 'fname = getname_flags(filename, lookup_flags, NULL)' fs/open.c
-          grep -q 'fname = getname_flags(filename, lookup_flags, NULL)' fs/stat.c
-          # fs/stat.c has two merged stat entry points (newfstatat, fstatat64)
-          # that must keep their legacy call inside a manual-hook arm only, and
-          # the fstat/fstat64 buffers are fixed up by the driver's
-          # ksu_handle_newfstat_ret()/ksu_handle_fstat64_ret(), which are
-          # compiled only in manual-hook mode. SUSFS mode does the equivalent in
-          # vfs_statx_fd() via ksu_handle_vfs_fstat(), which must be wired or
-          # init.rc is reported without the injected rc length.
-          test "$(grep -c '#ifndef CONFIG_KSU_SUSFS' fs/stat.c)" -ge 4
+          # Hook call shape (backslashxx manual-hook ABI). The driver takes
+          # the raw user pointer at faccessat/stat (const char __user **), and
+          # the fstat/fstat64 return buffers are fixed up by the driver's
+          # ksu_handle_newfstat_ret()/ksu_handle_fstat64_ret(). Assert the call
+          # sites and the driver prototypes so an ABI drift fails the build.
+          grep -q 'ksu_handle_faccessat(&dfd, &filename, &mode, NULL)' fs/open.c
+          grep -q 'ksu_handle_stat(&dfd, &filename, &flags)' fs/stat.c
+          grep -q 'ksu_handle_stat(&dfd, &filename, &flag)' fs/stat.c
+          grep -q 'ksu_handle_newfstat_ret(&fd, &statbuf)' fs/stat.c
+          grep -q 'ksu_handle_fstat64_ret(&fd, &statbuf)' fs/stat.c
+          grep -q 'ksu_handle_execveat(&fd, &filename, &argv, &envp, &flags)' fs/exec.c
+          grep -q 'ksu_handle_sys_reboot(magic1, magic2, cmd, &arg)' kernel/reboot.c
+          grep -q 'ksu_handle_faccessat(int \*dfd, const char __user \*\*filename_user, int \*mode' drivers/kernelsu/feature/sucompat.c
           # Fake uname must be COMPOSED with SUSFS, not fight it: the BPF
           # spoof is applied first and susfs_spoof_uname() runs after, so a
           # manager-configured SUSFS release always overwrites it. These
@@ -401,7 +388,7 @@ jobs:
           check_file out/arch/arm64/boot/dtb.img
           check_file out/arch/arm64/boot/dtbo.img
           check_file out/arch/arm64/boot/dts/qcom/curtana-atoll-ab-idp-overlay.dtbo
-          check_file out/drivers/kernelsu/kernelsu.o
+          check_file out/drivers/kernelsu/ksu.o
           check_file out/fs/susfs.o
           check_file out/fs/nomount/nomount.o
           # eBPF stream parser (sockmap/sk_msg) - all three objects must exist.
@@ -422,19 +409,12 @@ jobs:
           # defined(MODULE). This kernel builds CONFIG_KSU=y, so the init entry
           # point is kernelsu_init. Asserting the other one failed build #126.
           #
-          # The SUSFS <-> driver contract instead: the dispatch entry point the
-          # manager's CMD_SUSFS_* calls land in, the kernel-side SUSFS handler,
-          # and the sucompat gate the kernel-side hook sites read.
-          check_sym ksu_handle_susfs_cmd
-          check_sym susfs_get_enabled_features
-          check_sym ksu_su_compat_enabled
-          # The three hook sites added for the SUSFS inline-hook mode: if any
-          # of these is not linked, sucompat/su-hiding is silently degraded.
-          check_sym ksu_handle_setresuid
-          check_sym ksu_handle_sys_read
-          check_sym ksu_handle_input_handle_event
+          # Kernel-side hook entry points and the SUSFS kernel side. If any of
+          # these is missing, sucompat or the hiding stack is degraded without
+          # the build saying so.
           check_sym susfs_init
           check_sym susfs_add_sus_map
+          check_sym susfs_set_uname
           check_sym nomount_init
           # eBPF stream parser: if any of these is missing the option silently
           # collapsed and BPF_MAP_TYPE_SOCKMAP would not work.
@@ -522,49 +502,35 @@ jobs:
           from_ours() { gh release download stormbreaker-v111 \
             -R "$GITHUB_REPOSITORY" -p "$1" -D release-assets --clobber; }
 
-          # Manager APK: pinned to the BakaSU release the vendored driver
-          # comes from. The version code in the asset name (35171) is the
-          # same KSU_VERSION the driver reports, so manager and kernel agree
-          # on the ABI.
+          # Manager APK: pinned to the backslashxx/KernelSU release the
+          # vendored driver comes from. The version code in the asset name
+          # (32663) is the KSU_VERSION the driver reports, so the manager and
+          # the kernel agree on the ABI.
           #
-          # Fallback: scan our own releases (newest first) for an immutable
-          # copy of that exact APK. Older releases carry the retired
-          # backslashxx manager under a different name (KernelSU-manager.apk,
-          # version code 32655) which talks to a different driver ABI, so a
-          # name match on "BakaSU-manager.apk" is required - never fall back
-          # to the stale manager.
-          pinned_manager_from_own_releases() {
-            local tag
-            for tag in $(gh api "repos/$GITHUB_REPOSITORY/releases?per_page=40" \
-                           --jq '.[].tag_name'); do
-              if gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag" \
-                   --jq '.assets[].name' | grep -qx 'BakaSU-manager.apk'; then
-                gh release download "$tag" -R "$GITHUB_REPOSITORY" \
-                  -p 'BakaSU-manager.apk' -D release-assets --clobber \
-                  && { echo "manager APK: pinned copy from $tag"; return 0; }
-              fi
-            done
-            return 1
-          }
-
+          # Fallback: the immutable copy published with stormbreaker-v111 (the
+          # same manager family). Upstream deletes its old tags, so our own
+          # copy is what keeps a rebuild of an old pin possible.
           got_manager=0
-          for tag in v4.2.0-rc3; do
-            if gh release download "$tag" -R Baka-SU/BakaSU \
-                 -p 'ReSukiSU_v4.2.0-rc3_35171-universal-release.apk' \
+          for tag in v3.3.0-62; do
+            if gh release download "$tag" -R backslashxx/KernelSU \
+                 -p 'KernelSU_v3.3.0-62_32663-release.apk' \
                  -D release-assets --clobber; then
-              mv release-assets/ReSukiSU_v4.2.0-rc3_35171-universal-release.apk \
-                 release-assets/BakaSU-manager.apk
-              echo "manager APK: from Baka-SU/BakaSU $tag"
+              mv release-assets/KernelSU_v3.3.0-62_32663-release.apk \
+                 release-assets/KernelSU-manager.apk
+              echo "manager APK: from backslashxx/KernelSU $tag"
               got_manager=1
               break
             fi
           done
           if [ "$got_manager" -eq 0 ]; then
-            pinned_manager_from_own_releases || {
-              echo "::error::BakaSU manager APK unavailable: the Baka-SU/BakaSU $tag" \
-                   "download failed and no release of ours carries BakaSU-manager.apk yet"
+            if from_ours 'KernelSU-manager.apk'; then
+              echo "manager APK: immutable copy from stormbreaker-v111"
+            else
+              echo "::error::KernelSU manager APK unavailable: the" \
+                   "backslashxx/KernelSU $tag download failed and no release" \
+                   "of ours carries KernelSU-manager.apk"
               exit 1
-            }
+            fi
           fi
 
           if from_ours 'BRENE-v0.0.68.zip'; then
@@ -583,14 +549,14 @@ jobs:
                release-assets/NoMount-v2.0.0.zip
           fi
           # sanity: the manager APK and modules must be zip/apk archives
-          head -c2 release-assets/BakaSU-manager.apk | grep -q PK
+          head -c2 release-assets/KernelSU-manager.apk | grep -q PK
           head -c2 release-assets/BRENE-v0.0.68.zip | grep -q PK
           head -c2 release-assets/NoMount-v2.0.0.zip | grep -q PK
           # An HTML error page or a truncated download also starts with bytes
           # that can pass a header check, so look inside the APK: a real one
           # has AndroidManifest.xml and a dex payload.
-          unzip -l release-assets/BakaSU-manager.apk | grep -q 'AndroidManifest.xml'
-          unzip -l release-assets/BakaSU-manager.apk | grep -qE 'classes[0-9]*\.dex'
+          unzip -l release-assets/KernelSU-manager.apk | grep -q 'AndroidManifest.xml'
+          unzip -l release-assets/KernelSU-manager.apk | grep -qE 'classes[0-9]*\.dex'
           ls -la release-assets/
 
       - name: Prepare release notes
@@ -638,7 +604,7 @@ jobs:
             --title "Stormbreaker Kernel miatoll v${GITHUB_RUN_NUMBER}" \
             --notes-file release-notes.md \
             release-assets/Stormbreaker-miatoll-*.zip \
-            release-assets/BakaSU-manager.apk \
+            release-assets/KernelSU-manager.apk \
             release-assets/BRENE-v0.0.68.zip \
             release-assets/NoMount-v2.0.0.zip
           gh release view "$TAG" --json url --jq '.url'

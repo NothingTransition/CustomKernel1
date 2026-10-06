@@ -2,106 +2,158 @@
 
 This directory vendors the kernel component from:
 
-- Repository: https://github.com/Baka-SU/BakaSU (formerly ReSukiSU)
-- Tag: `v4.2.0-rc3`
-- Commit: `239e1e8871b8fcd51a6e5b3002e0ba522fdd99fb`
-- Driver version reported to userspace: **`KSU_VERSION 35171`**
-  — upstream's own formula `30000 + <commit count> + 700` for `4471` commits
-- Manager this pairs with: `ReSukiSU_v4.2.0-rc3_35171-universal-release.apk`
-  from the same tag; the version code in its file name is the same `35171`,
-  so the manager and the kernel agree on the ABI
-
-It replaces the previous `backslashxx/KernelSU` v3.3.0-60 driver
-(`KSU_VERSION 32657`), which was a unity build; this driver is a normal
-multi-object kbuild.
-
-## Local deviations from upstream v4.2.0-rc3
-
-Four, all deliberate:
-
-1. **Vendored, not a submodule — version pinned locally.** Upstream's
-   `Kbuild` hard-errors unless the driver is a git submodule (*"You should
-   use ReSukiSU as a git submodule instead of copying code directly"*) and
-   derives the version from that repository's git history
-   (`rev-list --count`, `describe`, `rev-parse`). This tree vendors its
-   components rather than fetching them during kbuild — the same reasoning
-   recorded in `fs/nomount/UPSTREAM.md`: reproducible builds that do not
-   fetch or mutate source while Kbuild runs. That block was therefore
-   replaced by `include $(KSU_SRC)/local_version.mk`, which pins the five
-   values the upstream formula produces for the tag above. No git repository
-   and no network access is required at build time.
-2. **Manager policy.** `manager/apk_sign.c` accepts two certificates: the
-   ReSukiSU/BakaSU one (`0x377` / `d3469712…`) and the official KernelSU one
-   (`0x033b` / `c371061b…`). The four other certificates upstream knows about
-   (5ec1cff, rsuntk, SukiSU-Ultra, KOWX712) stay behind
-   `CONFIG_KSU_MULTI_MANAGER_SUPPORT`, which is **off** in the defconfig.
-   The posture is unchanged from the previous driver: the manager family this
-   tree ships is trusted, fork managers are not.
-3. **Hook method: SUSFS inline hook** (`CONFIG_KSU_SUSFS` is the hook choice,
-   not a plain "SUSFS support" switch as it was with the old driver). The
-   tracepoint hook is GKI 2.0 / 5.10+ only, and the plain manual hook carries
-   no SUSFS integration, so the inline-hook mode is the one that pairs with
-   the v2.3.0 SUSFS kernel side in this tree. `CONFIG_KSU_TRACEPOINT_HOOK`
-   and `CONFIG_KSU_MANUAL_HOOK` are both off.
-4. **`CONFIG_KSU_SUSFS` also depends on `FUSE_FS`.** The SUSFS kernel side in
-   this tree (`fs/susfs.c`) includes `fuse/fuse_i.h` and calls
-   `get_fuse_inode()`, so a built-in FUSE is required. Upstream carries no
-   such dependency because it targets GKI trees where FUSE is always present.
-   The dependency is re-added locally and the requirement is also asserted in
-   CI.
-
-## Kernel-side hook sites
-
-In SUSFS-inline-hook mode the driver supplies the hook *functions* and the
-kernel tree supplies the *call sites*. `tools/inline_hook_check.mk` greps for
-each of them during the build and fails hard if one is missing, so a silent
-regression here is not possible:
-
-| File | Symbol | Added by |
-|---|---|---|
-| `kernel/sys.c` | `ksu_handle_setresuid` | this integration |
-| `fs/exec.c` | `ksu_handle_execveat` | pre-existing |
-| `fs/open.c` | `ksu_handle_faccessat` | pre-existing |
-| `fs/read_write.c` | `ksu_handle_sys_read` | this integration |
-| `fs/stat.c` | `ksu_handle_stat` | pre-existing |
-| `fs/stat.c` | `ksu_handle_newfstat_ret` | pre-existing |
-| `fs/stat.c` | `ksu_handle_fstat64_ret` | pre-existing |
-| `kernel/reboot.c` | `ksu_handle_sys_reboot` | pre-existing |
-| `drivers/input/input.c` | `ksu_handle_input_handle_event` | this integration |
-
-The check also rejects the *old* hook style (`ksu_vfs_read_hook`,
-`ksu_input_hook`, `ksu_execveat_hook`, `ksu_init_rc_hook`,
-`is_ksu_transition`). None of those are present.
-
-The four `ksu_handle_*` calls already in the tree from the previous driver
-were kept: their signatures match this driver exactly (verified against
-`feature/sucompat.c` and `runtime/ksud_integration.c`), and
-`runtime/ksud_integration.c` defines `ksu_handle_newfstat_ret` and
-`ksu_handle_fstat64_ret`, so those call sites still resolve.
-
-The call sites are guarded by `CONFIG_KSU`, deliberately **not** by
-`CONFIG_KSU_MANUAL_HOOK`: `inline_hook_check.mk` warns about a
-`CONFIG_KSU_MANUAL_HOOK` guard in these files, because in SUSFS-hook mode that
-symbol is undefined and the hook would compile out while still passing the
-grep.
-
-## Version pinning
-
-`local_version.mk` holds `KSU_LOCAL_VERSION`, `KSU_VERSION`, `KSU_TAG_NAME`,
-`KSU_COMMIT_SHA` and `KSU_BRANCH_NAME`. When the vendored driver is updated,
-bump all five together **and** update the pinned manager APK in the CI
-workflow (`ReSukiSU_<tag>_<version>-universal-release.apk`) — a mismatch
-between the two is exactly what makes a manager report an unsupported kernel.
+- Repository: https://github.com/backslashxx/KernelSU
+- Tag: `v3.3.0-62` (upstream kernel Makefile: 32663)
+- Tag object: `28ac0a274a860bf580573df2c74821af2b9f8581`
+- Manager policy (Stormbreaker, by maintainer decision 2026-10-05): **only the
+  backslashxx/KernelSU manager family is trusted.** The tree accepts the
+  release managers (public dummy.keystore cert `0x363/4359c171…`, package
+  locked to `me.weishu.kernelsu`) and self-built managers on the official
+  KernelSU cert (`c371061b…`). The KernelSU-Next cert (`0x3e6/79e59011…`),
+  the `ksu_manager_kind` bookkeeping, the two-manager crowning priority in
+  `manager/throne_tracker.c` and the KSUN driver-version report in
+  `supercall/dispatch.c` were removed; upstream -56 dropped its own
+  KSUN support at the same time, and the KOWX712 fork cert upstream added
+  (`0x375/484fcba6…`) is deliberately NOT accepted here.
 
 ## Sync history
 
-- 2026-10-05: `backslashxx/KernelSU` `v3.3.0-60` → `Baka-SU/BakaSU`
-  `v4.2.0-rc3`. Full driver replaced (`drivers/kernelsu/`, 102 files,
-  multi-object build). Taken as upstream: everything except the four
-  deviations above. Added by this integration: the three missing kernel-side
-  hook sites (`kernel/sys.c`, `fs/read_write.c`, `drivers/input/input.c`),
-  the SUSFS "no su" / "umounted for zygote next" flag helpers in
-  `include/linux/susfs_def.h`, and the `no_su` gates at the sucompat call
-  sites. The old driver's local SUSFS command block in
-  `supercall/supercall.c` is gone: this driver implements SUSFS command
-  dispatch itself (`supercall/dispatch.c` → `ksu_handle_susfs_cmd`).
+- 2026-10-06: manual sync `v3.3.0-60` -> `v3.3.0-62` (KSU_VERSION 32657 ->
+  32663). The tag was diffed file-by-file against this vendor: 72 of 83 files
+  were already byte-identical, so the sync is small - taken upstream:
+  `Makefile` (version + upstream kernel-change marker `26c45e2`),
+  `INTERNAL.md` (clang < 19 note), `manager/throne_tracker.c` (deferred
+  file opens after `iterate_dir`, `memcmp` instead of the local
+  `memcmp_inline`, unused `apk_path_hash` struct dropped - no
+  KSUN/two-manager logic, so the single-manager policy is unaffected).
+  Everything else that differs from the tag is local and deliberate: the
+  SUSFS-carrying files (`Kconfig`, `ksu.c`, `hook/setuid_hook.c`,
+  `selinux/selinux.c`, `supercall/supercall.c`, `supercall/dispatch.c` -
+  the latter keeps our atomic `EVENT_POST_FS_DATA` one-shot) and the
+  manager-policy trim in `manager/apk_sign.c` (KOWX712 cert not accepted).
+  Manager APK pin moved to the v3.3.0-62 build
+  (`KernelSU_v3.3.0-62_32663-release.apk`); the immutable copy published
+  with `stormbreaker-v111` remains the fallback.
+- 2026-10-06: **BakaSU v4.2.0-rc3 was tried and reverted.** The driver was
+  replaced for one release line (`db02418e6`..`039f4d629`) with BakaSU's
+  SUSFS inline-hook mode. Reverted on maintainer decision: BakaSU exposes
+  more than this build wants (manager/driver surface), and the inline-hook
+  mode needs seven kernel hook sites where the scope-minimized backslashxx
+  manual hooks need five. The audit that came out of that experiment is in
+  `BPF-AUDIT.md`; the SUSFS v2.3.0 kernel side, NoMount and the eBPF work
+  (stream parser, `BPF_JMP32`, fake uname) are unaffected and stay.
+- 2026-10-05: manual sync `v3.3.0-56` -> `v3.3.0-60` on the v93 lineage
+  (KSU_VERSION stays 32657 - upstream did not bump the kernel ABI; release
+  -56 was deleted upstream, so the old pin no longer resolves). Taken
+  upstream wholesale: `INTERNAL.md`, `hook/lsm_hooks_ultralegacy.c`
+  (`memcmp_inline`, no zero-init of the probe buffer), `manager/pkg_observer.c`
+  (`strnstr`), `manager/apk_sign.c` (KOWX712 block trimmed again),
+  `ksu.c` (module-blacklist include simplification on the module path),
+  `Kconfig` (the kprobes-based hook option is now marked deprecated and
+  depends on DEPRECATED, which this 4.14 tree does not define - the option
+  stays unavailable, as intended). Kept local as always: the SUSFS-carrying
+  files (`Kconfig` menu, `ksu.c` susfs_init, `hook/setuid_hook.c`,
+  `selinux/selinux.c`, `supercall/supercall.c` SUSFS command block,
+  `supercall/dispatch.c` atomic one-shot + module-mounted flag).
+  Manager APK ships as the upstream v3.3.0-60 build, with the immutable
+  -56 copy on `stormbreaker-v111` as the fallback.
+- 2026-10-05: manual sync `v3.3.0-52` -> `v3.3.0-56` on the v93 lineage
+  (KSU_VERSION 32651 -> 32657). Taken upstream wholesale (16 files):
+  `Makefile`, `INTERNAL.md`, `downstream/module_blacklist.h`,
+  `feature/adb_root.c`, `feature/kernel_umount.c`, `feature/selinux_hide.{c,h}`,
+  `hook/lsm_hooks_list.c`, `hook/lsm_hooks_ultralegacy.c`,
+  `hook/syscall_table_hook_arm.c`, `include/uapi/supercall.h` (UAPI 5,
+  `EVENT_SERVICES`), `kernel_compat.h`, `kernel_includes.h`,
+  `policy/allowlist.c`, `policy/app_profile.c`, `selinux/sepolicy.c`.
+  Taken upstream + locally trimmed: `manager/apk_sign.c` (upstream's
+  KOWX712 block removed - see the manager policy above),
+  `manager/manager_identity.h`, `manager/throne_tracker.c` (upstream's
+  single-manager crowning; our two-manager priority logic deleted).
+  Locally adapted: `supercall/dispatch.c` - took upstream's `EVENT_SERVICES`
+  handler (start/skip result, reset on the POST_FS_DATA path), removed the
+  KSUN version report, kept our atomic `EVENT_POST_FS_DATA` one-shot and the
+  SUSFS sdcard-monitor call. Kept local as always: the SUSFS-carrying files
+  (`Kconfig` menu, `ksu.c` susfs_init, `hook/setuid_hook.c` susfs
+  umount/looped-path work, `selinux/selinux.c`, `supercall/supercall.c`'s
+  SUSFS command block, `supercall/dispatch.c` bits above). Upstream -56 still
+  ships no SUSFS code.
+- 2026-09-26: manual sync `v3.3.0-51` -> `v3.3.0-52` (release -51 was deleted
+  upstream, so the old manager pin no longer resolves). Taken upstream:
+  `include/util.h` (drops the <5.9 ksu_sys_umount inline — its live <5.9 user
+  moved), `kernel_compat.h` (legacy kernel_read compat reorg, adds
+  ksu_sign_extend64, keeps the lookup_user_key() session-keyring grab used on
+  4.14), `feature/kernel_umount.c` (new <5.9 fallback: weak path_umount probe
+  with set_fs/KERNEL_DS umount-syscall fallback — correct for 4.14),
+  `INTERNAL.md`. Kept local: the SUSFS-carrying files (Kconfig menu, ksu.c
+  susfs_init, setuid_hook.c susfs umount/looped-path work, supercall ABI,
+  selinux glue, dispatch.c one-shots) — upstream -52 dropped SUSFS entirely,
+  so nothing SUSFS-related was taken. KSU_VERSION stays 32651 (unchanged
+  upstream too); manager pin and docs moved to v3.3.0-52 (APK still 32653).
+- 2026-09-24: KSU_VERSION reverted to 32651 (upstream kernel value) after a
+  same-day 32653 alignment experiment — maintainer decision to mirror
+  upstream verbatim again. Release flipped from pre-release to stable and
+  the UNTESTED marker removed from zip name and flash banner. Docs refresh
+  kept: fs/SUSFS_UPSTREAM.md rewritten to the v2.3.0 port (it had described
+  the pre-upgrade v1.5.5 import and wrongly claimed BRENE incompatibility).
+- 2026-09-24: manual sync `v3.3.0-48` -> `v3.3.0-51`. Taken upstream:
+  `Makefile` (32649 -> 32651), `include/arch.h` (symbol table rework; only
+  consumed by kprobe code that is not compiled in this tree -- CONFIG_KPROBES
+  is off and kp_ksud.c is not referenced by any Makefile), `hook/kp_ksud.c`
+  (PT_REGS_SYSCALL_PARM1 fixes, same dead-code status), `hook/lsm_hooks_list.c`
+  (#if 0 demo + comment), `kernel_includes.h` (+linux/key.h), `include/util.h`
+  (riscv branch, PT_REGS_SYSCALL_PARM1 in dead >=4.19 path, ksu_sys_umount
+  int->long), `kernel_compat.h` (ksu_sys_umount long + cast on the live <5.9
+  path, <3.11 iterate_dir wrapper dead here, session-keyring grab reworked
+  onto lookup_user_key() which exists on 4.14). Kept local: the usual six
+  SUSFS-carrying files (dispatch.c keeps our atomic one-shot + sdcard monitor).
+- 2026-09-23: manual sync `v3.3.0-43` -> `v3.3.0-48` (16 files reviewed).
+  Taken upstream wholesale: `Makefile` (version), `INTERNAL.md`,
+  `feature/selinux_hide.h` (cpu type + printk fmt), `hook/lsm_hooks_list.c`
+  (error codes + ksym verification; LKM-only bruteforce path is compile-
+  guarded and inactive in our built-in build), `kernel_compat.h` and
+  `include/util.h` (reworked ksyscall machinery and <4.14 compat layer --
+  both dead code on this 4.14.357 tree, live <5.9 paths unchanged in
+  behavior), `selinux/rules.c` (>=5.10 RCU-deref fix, dead code here),
+  whitespace-only `kernel_includes.h`, `feature/kernel_umount.c`,
+  `manager/throne_tracker.c`. Kept local: `ksu.c`, `hook/setuid_hook.c`,
+  `selinux/selinux.c`, `supercall/supercall.c`, `supercall/dispatch.c`,
+  `Kconfig` -- these carry the SUSFS v2.3.0 integration blocks.
+  Note: upstream deleted the `v3.3.0-43` and `v3.3.0-47` tags, so the sync
+  was diffed directly against `v3.3.0-48`.
+
+It is integrated in-tree for the Linux 4.14 non-GKI Miatoll kernel. The
+scope-minimized manual hooks are based on backslashxx/KernelSU issue #5,
+manual-hooks revision v2.3. Kprobe, syscall-table tampering, and ARM64
+branch-link hooks are intentionally disabled in the Miatoll defconfig.
+
+## SUSFS v2.3.0 (non-GKI 4.14 semantic port)
+
+- SUSFS_VERSION: v2.3.0 (was v2.2.0)
+- Upstream kernel changes by simonpunk/sidex15, Sep 12-13 2026, version-bump
+  commit `a64889c` ("fs: susfs: bump version to v2.3.0"); GKI branches of
+  https://gitlab.com/simonpunk/susfs4ksu track this series.
+- 4.14 semantic-port reference: https://github.com/star-star-dev/M62-backport
+  pull request #3 (merged 2026-09-22), itself built from the same upstream
+  commit series. Symbols unavailable on 4.14 (STATX_MNT_ID, zygote_next
+  hooks, kstat.mnt_id) are omitted as no-ops, matching that reference.
+- Local adaptations on top of the reference:
+  - `susfs_get_non_sus_vfsmnt_from_vfsmnt()` may return NULL in this tree
+    (audit-hardened reference contract); `susfs_mark_inode_sus_kstat()` and
+    `vfs_statfs()` keep NULL-safe fallbacks instead of dereferencing.
+  - fdinfo/maps spoofing keeps this lineage's direct inode-metadata design
+    (susfs_show_map_vma_spoofer) with the new v2.3.0 app-uid gating.
+  - `get_anon_bdev()` KSU minor-dev hook adapted to the 4.14 ida API
+    (ida_pre_get/ida_get_new_above).
+
+## Audit hardening batch (2026-09-23)
+
+- fs/statfs.c: ported upstream susfs fix 769e31fbe ("SUS_KSTAT: Fix wrong
+  spoofing logic in vfs_statfs()") — the KSTAT path now returns the spoofed
+  kstatfs as-is (f_flags no longer recalculated from the real mount); the
+  SUS_MOUNT same-mount path recalculates f_flags from the caller's mount;
+  the now-unused bypass_orig_flow label in vfs_statfs was removed.
+- include/linux/susfs_def.h: SUSFS_IS_INODE_* macro arguments parenthesized.
+- supercall/dispatch.c: EVENT_POST_FS_DATA one-shot guard converted from a
+  non-atomic bool to atomic_cmpxchg (side effects must run exactly once).
+- Kconfig: KSU_SUSFS now depends on FUSE_FS (fs/susfs.c includes
+  fuse/fuse_i.h and links get_fuse_inode(), which needs built-in FUSE).

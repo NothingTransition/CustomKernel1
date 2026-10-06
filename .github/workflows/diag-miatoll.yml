@@ -201,7 +201,7 @@ jobs:
           test -s out/arch/arm64/boot/Image.gz
           test -s out/arch/arm64/boot/dtb.img
           test -s out/arch/arm64/boot/dtbo.img
-          test -s out/drivers/kernelsu/kernelsu.o
+          test -s out/drivers/kernelsu/ksu.o
           test -s out/fs/susfs.o
           test -s out/fs/nomount/nomount.o
 
