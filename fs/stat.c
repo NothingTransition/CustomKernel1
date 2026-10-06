@@ -185,6 +185,12 @@ EXPORT_SYMBOL(vfs_getattr);
  *
  * 0 will be returned on success, and a -ve error code if unsuccessful.
  */
+#ifdef CONFIG_KSU_SUSFS
+/* SUSFS inline-hook mode: defined in the driver (runtime/ksud_integration.c)
+ * and used below to report init.rc with the injected rc length. */
+extern void ksu_handle_vfs_fstat(int fd, loff_t *kstat_size_ptr);
+#endif
+
 int vfs_statx_fd(unsigned int fd, struct kstat *stat,
 		 u32 request_mask, unsigned int query_flags)
 {
@@ -223,8 +229,6 @@ extern int ksu_handle_stat(int *dfd, struct filename **filename, int *flags);
 /* Declared in fs/internal.h, which this file does not include. */
 extern int filename_lookup(int dfd, struct filename *name, unsigned flags,
 			   struct path *path, struct path *root);
-/* Defined under CONFIG_KSU_SUSFS in the driver, used by vfs_statx_fd(). */
-extern void ksu_handle_vfs_fstat(int fd, loff_t *kstat_size_ptr);
 #endif
 
 /**

@@ -191,6 +191,14 @@ jobs:
           grep -q 'ksu_handle_vfs_fstat(fd, &stat->size)' fs/stat.c
           grep -q 'void ksu_handle_vfs_fstat(int fd, loff_t \*kstat_size_ptr)' \
             drivers/kernelsu/runtime/ksud_integration.c
+          # ...and its declaration has to come before the call (clang 16+ turns
+          # an implicit declaration into a hard error, which build #124 hit).
+          vfs_decl=$(grep -n 'extern void ksu_handle_vfs_fstat' fs/stat.c | head -1 | cut -d: -f1)
+          vfs_call=$(grep -n 'ksu_handle_vfs_fstat(fd, &stat->size)' fs/stat.c | head -1 | cut -d: -f1)
+          test -n "$vfs_decl" && test -n "$vfs_call" && test "$vfs_decl" -lt "$vfs_call"
+          stat_decl=$(grep -n 'extern int ksu_handle_stat(int \*dfd, struct filename \*\*filename' fs/stat.c | head -1 | cut -d: -f1)
+          stat_call=$(grep -n 'ksu_handle_stat(&dfd, &fname, &flags)' fs/stat.c | head -1 | cut -d: -f1)
+          test -n "$stat_decl" && test -n "$stat_call" && test "$stat_decl" -lt "$stat_call" 
           # The manual-hook-only fixups must not be reachable in SUSFS mode.
           test "$(grep -c 'ksu_handle_newfstat_ret(&fd, &statbuf)' fs/stat.c)" -eq 1
           test "$(grep -c 'ksu_handle_fstat64_ret(&fd, &statbuf)' fs/stat.c)" -eq 1
