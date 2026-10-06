@@ -338,50 +338,63 @@ jobs:
         run: |
           set -euo pipefail
 
-          test -s out/arch/arm64/boot/Image.gz
-          test -s out/arch/arm64/boot/dtb.img
-          test -s out/arch/arm64/boot/dtbo.img
-          test -s out/arch/arm64/boot/dts/qcom/curtana-atoll-ab-idp-overlay.dtbo
-          test -s out/drivers/kernelsu/kernelsu.o
-          test -s out/fs/susfs.o
-          test -s out/fs/nomount/nomount.o
+          # Every check announces itself, so a failure names the exact missing
+          # product or symbol in an ::error:: annotation - GitHub caps annotations
+          # per step and the raw logs are not always retrievable.
+          check_file() {
+            test -s "$1" || { echo "::error::verify: missing build product: $1"; exit 1; }
+            echo "ok product: $1"
+          }
+          check_sym() {
+            grep -q " $1\$" vmlinux.sym \
+              || { echo "::error::verify: not linked into vmlinux: $1"; exit 1; }
+            echo "ok symbol: $1"
+          }
+
+          check_file out/arch/arm64/boot/Image.gz
+          check_file out/arch/arm64/boot/dtb.img
+          check_file out/arch/arm64/boot/dtbo.img
+          check_file out/arch/arm64/boot/dts/qcom/curtana-atoll-ab-idp-overlay.dtbo
+          check_file out/drivers/kernelsu/kernelsu.o
+          check_file out/fs/susfs.o
+          check_file out/fs/nomount/nomount.o
           # eBPF stream parser (sockmap/sk_msg) - all three objects must exist.
-          test -s out/net/core/skmsg.o
-          test -s out/net/core/sock_map.o
-          test -s out/net/ipv4/tcp_bpf.o
-          test -s out/net/strparser/strparser.o
+          check_file out/net/core/skmsg.o
+          check_file out/net/core/sock_map.o
+          check_file out/net/ipv4/tcp_bpf.o
+          check_file out/net/strparser/strparser.o
 
           # Write once instead of piping llvm-nm into grep -q: with pipefail,
           # grep's early exit makes llvm-nm report EPIPE (exit 74).
           llvm-nm out/vmlinux > vmlinux.sym
-          grep -q ' ksu_handle_execveat$' vmlinux.sym
-          grep -q ' ksu_handle_sys_reboot$' vmlinux.sym
-          grep -q ' kernelsu_init$' vmlinux.sym
-          grep -q ' kernelsu_init_early$' vmlinux.sym
+          check_sym ksu_handle_execveat
+          check_sym ksu_handle_sys_reboot
+          check_sym kernelsu_init
+          check_sym kernelsu_init_early
           # The three hook sites added for the SUSFS inline-hook mode: if any
           # of these is not linked, sucompat/su-hiding is silently degraded.
-          grep -q ' ksu_handle_setresuid$' vmlinux.sym
-          grep -q ' ksu_handle_sys_read$' vmlinux.sym
-          grep -q ' ksu_handle_input_handle_event$' vmlinux.sym
-          grep -q ' susfs_init$' vmlinux.sym
-          grep -q ' susfs_add_sus_map$' vmlinux.sym
-          grep -q ' nomount_init$' vmlinux.sym
+          check_sym ksu_handle_setresuid
+          check_sym ksu_handle_sys_read
+          check_sym ksu_handle_input_handle_event
+          check_sym susfs_init
+          check_sym susfs_add_sus_map
+          check_sym nomount_init
           # eBPF stream parser: if any of these is missing the option silently
           # collapsed and BPF_MAP_TYPE_SOCKMAP would not work.
-          grep -q ' sk_psock_init$' vmlinux.sym
-          grep -q ' sock_map_close$' vmlinux.sym
-          grep -q ' sock_map_destroy$' vmlinux.sym
-          grep -q ' sk_msg_alloc$' vmlinux.sym
-          grep -q ' tcp_bpf_recvmsg$' vmlinux.sym
-          grep -q ' strp_init$' vmlinux.sym
+          check_sym sk_psock_init
+          check_sym sock_map_close
+          check_sym sock_map_destroy
+          check_sym sk_msg_alloc
+          check_sym tcp_bpf_recvmsg
+          check_sym strp_init
 
           # v93 lineage: MGLRU and the container/namespace set are back in.
           # The config assertions above are the real gate; this proves the
           # linked image agrees with them.
-          grep -q ' lru_gen_init_lruvec$' vmlinux.sym
-          grep -q ' lru_gen_init_mm$' vmlinux.sym
-          grep -q ' sys_semget$' vmlinux.sym
-          grep -q ' create_user_ns$' vmlinux.sym
+          check_sym lru_gen_init_lruvec
+          check_sym lru_gen_init_mm
+          check_sym sys_semget
+          check_sym create_user_ns
 
           make -s O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- kernelrelease | tee kernel.release
