@@ -370,7 +370,18 @@ jobs:
           check_sym ksu_handle_execveat
           check_sym ksu_handle_sys_reboot
           check_sym kernelsu_init
-          check_sym kernelsu_init_early
+          # NOT kernelsu_init_early: the driver only compiles it (and only
+          # *registers* it instead of kernelsu_init) when it is built as a
+          # loadable module - its NEED_OWN_STACKPROTECTOR guard requires
+          # defined(MODULE). This kernel builds CONFIG_KSU=y, so the init entry
+          # point is kernelsu_init. Asserting the other one failed build #126.
+          #
+          # The SUSFS <-> driver contract instead: the dispatch entry point the
+          # manager's CMD_SUSFS_* calls land in, the kernel-side SUSFS handler,
+          # and the sucompat gate the kernel-side hook sites read.
+          check_sym ksu_handle_susfs_cmd
+          check_sym susfs_get_enabled_features
+          check_sym ksu_su_compat_enabled
           # The three hook sites added for the SUSFS inline-hook mode: if any
           # of these is not linked, sucompat/su-hiding is silently degraded.
           check_sym ksu_handle_setresuid
