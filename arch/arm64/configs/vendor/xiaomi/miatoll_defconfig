@@ -1225,6 +1225,14 @@ CONFIG_BPF_JIT=y
 # and the whole file compiles. Enabling this selects STREAM_PARSER and
 # NET_SOCK_MSG, so skmsg.o, sock_map.o and tcp_bpf.o are built in.
 CONFIG_BPF_STREAM_PARSER=y
+# BPF userspace compatibility: report the release whose BPF feature set this
+# kernel actually implements. The core/verifier backport in this tree is
+# exactly v5.10 (29 map types / 31 program types / 156 helpers), while the
+# real release string says 4.14, which makes Android's BPF userspace pick the
+# legacy program set. Only the root BPF consumer processes (bpfloader,
+# netbpfload, netd, uprobestats) see this; a manager-configured SUSFS uname
+# spoof always wins over it. See init/Kconfig, "Fake uname kernel version".
+CONFIG_FAKE_UNAME_5_10=y
 CONFIG_NET_FLOW_LIMIT=y
 CONFIG_SOCKEV_NLMCAST=y
 

@@ -165,6 +165,13 @@ jobs:
           require_config 'CONFIG_STREAM_PARSER=y'
           require_config 'CONFIG_NET_SOCK_MSG=y'
 
+          # BPF userspace compatibility spoof. Android's bpfloader /
+          # netbpfload / netd / uprobestats pick their program set from the
+          # uname() release string; the backport in this tree is exactly
+          # v5.10, so they must be told 5.10 or they take the legacy path.
+          require_config 'CONFIG_FAKE_UNAME_5_10=y'
+          require_config '# CONFIG_FAKE_UNAME_NONE is not set'
+
           # The arm64 eBPF JIT is the one piece of the BPF subsystem this tree
           # did NOT get from its 5.10-era backport (kernel/bpf, the uapi and
           # the verifier are 5.10; arch/arm64/net/bpf_jit_comp.c is the 4.14
@@ -210,6 +217,23 @@ jobs:
           # vfs_statx_fd() via ksu_handle_vfs_fstat(), which must be wired or
           # init.rc is reported without the injected rc length.
           test "$(grep -c '#ifndef CONFIG_KSU_SUSFS' fs/stat.c)" -ge 4
+          # Fake uname must be COMPOSED with SUSFS, not fight it: the BPF
+          # spoof is applied first and susfs_spoof_uname() runs after, so a
+          # manager-configured SUSFS release always overwrites it. These
+          # assertions pin that order and the narrow scope of the spoof.
+          grep -q 'fake_bpf_uname(&tmp);' kernel/sys.c
+          grep -q 'susfs_spoof_uname(&tmp);' kernel/sys.c
+          test "$(grep -n 'fake_bpf_uname(&tmp);' kernel/sys.c | cut -d: -f1)" \
+               -lt "$(grep -n 'susfs_spoof_uname(&tmp);' kernel/sys.c | cut -d: -f1)"
+          grep -qF 'if (current_uid().val != 0)' kernel/sys.c
+          grep -qF '"bpfloader", 9' kernel/sys.c
+          grep -qF '"netbpfload", 10' kernel/sys.c
+          grep -qF '"netd", 4' kernel/sys.c
+          grep -qF '"uprobestats", 11' kernel/sys.c
+          # SUSFS side unchanged: it only overwrites when the manager has set
+          # a release, which is what makes "SUSFS wins" true.
+          grep -qF 'if (my_uname.release[0] != ' fs/susfs.c
+          grep -qF 'susfs_spoof_uname(&tmp);' kernel/sys.c
           grep -q 'ksu_handle_vfs_fstat(fd, &stat->size)' fs/stat.c
           grep -q 'void ksu_handle_vfs_fstat(int fd, loff_t \*kstat_size_ptr)' \
             drivers/kernelsu/runtime/ksud_integration.c
