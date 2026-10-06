@@ -209,6 +209,9 @@ extern bool __ksu_is_allow_uid_for_current(uid_t uid);
 extern struct static_key_true ksu_su_compat_enabled;
 /* SUSFS inline-hook mode: the hook takes a real struct filename ** */
 extern int ksu_handle_stat(int *dfd, struct filename **filename, int *flags);
+/* Declared in fs/internal.h, which this file does not include. */
+extern int filename_lookup(int dfd, struct filename *name, unsigned flags,
+			   struct path *path, struct path *root);
 #endif
 
 /**
@@ -456,12 +459,18 @@ SYSCALL_DEFINE4(newfstatat, int, dfd, const char __user *, filename,
 	int error;
 
 #ifdef CONFIG_KSU
+#ifndef CONFIG_KSU_SUSFS
+	/*
+	 * Manual-hook mode only: this ABI (a raw user pointer) belongs to that
+	 * mode. In SUSFS inline-hook mode the single funnel is vfs_statx(): it
+	 * builds the filename, lets the driver rewrite it in place and only then
+	 * looks it up, so hooking here too would call the hook twice and with
+	 * the wrong argument type.
+	 */
 	extern int ksu_handle_stat(int *, const char __user **, int *);
 
-#ifdef CONFIG_KSU_SUSFS
-	if (likely(!susfs_is_current_proc_no_su()))
+	ksu_handle_stat(&dfd, &filename, &flag);
 #endif
-		ksu_handle_stat(&dfd, &filename, &flag);
 #endif
 	error = vfs_fstatat(dfd, filename, &stat, flag);
 	if (error)
@@ -622,12 +631,18 @@ SYSCALL_DEFINE4(fstatat64, int, dfd, const char __user *, filename,
 	int error;
 
 #ifdef CONFIG_KSU
+#ifndef CONFIG_KSU_SUSFS
+	/*
+	 * Manual-hook mode only: this ABI (a raw user pointer) belongs to that
+	 * mode. In SUSFS inline-hook mode the single funnel is vfs_statx(): it
+	 * builds the filename, lets the driver rewrite it in place and only then
+	 * looks it up, so hooking here too would call the hook twice and with
+	 * the wrong argument type.
+	 */
 	extern int ksu_handle_stat(int *, const char __user **, int *);
 
-#ifdef CONFIG_KSU_SUSFS
-	if (likely(!susfs_is_current_proc_no_su()))
+	ksu_handle_stat(&dfd, &filename, &flag);
 #endif
-		ksu_handle_stat(&dfd, &filename, &flag);
 #endif
 	error = vfs_fstatat(dfd, filename, &stat, flag);
 	if (error)

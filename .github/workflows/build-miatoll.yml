@@ -180,6 +180,19 @@ jobs:
           grep -q '#ifndef CONFIG_KSU_SUSFS' fs/open.c
           grep -q 'fname = getname_flags(filename, lookup_flags, NULL)' fs/open.c
           grep -q 'fname = getname_flags(filename, lookup_flags, NULL)' fs/stat.c
+          # fs/stat.c has two merged stat entry points (newfstatat, fstatat64)
+          # that must keep their legacy call inside a manual-hook arm only.
+          test "$(grep -c '#ifndef CONFIG_KSU_SUSFS' fs/stat.c)" -ge 2
+          # filename_lookup() is declared in fs/internal.h; fs/open.c includes
+          # that, fs/stat.c does not, so it declares it locally (clang 16+
+          # makes an undeclared function a hard error).
+          grep -q '#include "internal.h"' fs/open.c
+          grep -q 'extern int filename_lookup' fs/stat.c
+          # And the driver side of the same contract.
+          grep -q 'int ksu_handle_faccessat(int \*dfd, struct filename \*\*filename, int \*mode, int \*__unused_flags)' \
+            drivers/kernelsu/feature/sucompat.c
+          grep -q 'int ksu_handle_stat(int \*dfd, struct filename \*\*filename, int \*flags)' \
+            drivers/kernelsu/feature/sucompat.c
           require_config 'CONFIG_BPF_JIT_ALWAYS_ON=y'
           require_config 'CONFIG_BPF_UNPRIV_DEFAULT_OFF=y'
           require_config 'CONFIG_PSI=y'
@@ -253,9 +266,19 @@ jobs:
           set -e
 
           if [ "$build_status" -ne 0 ]; then
-            echo 'Kernel build failed. Relevant diagnostics:'
-            awk 'BEGIN{f=0; n=0} /error:/ { f=1 } f { print; n++ } n>=45 { exit }' build.log \
-              | sed 's/%/%25/g; s/\r/%0D/g; s/\n/%0A/g; s/^/::error::/' || true
+            # Build failed. GitHub caps ::error:: annotations per step, and
+            # logs/artifacts are not always retrievable, so the most useful
+            # signal is ONE annotation carrying every distinct compiler error
+            # (%0A is decoded as a newline by the runner).
+            grep -E ' error:' build.log | sed 's/\r$//' | awk '!seen[$0]++' \
+              | cut -c1-200 > build-errors.txt || true
+            total=$(grep -c . build-errors.txt || true)
+            head -n 25 build-errors.txt | sed 's/%/%25/g; s/$/%0A/' | tr -d '\n' \
+              > build-errors-annot.txt || true
+            printf '::error::Kernel build failed: %s distinct error lines. %s\n' \
+              "${total:-0}" "$(cat build-errors-annot.txt 2>/dev/null)"
+            echo "--- distinct compiler errors (${total:-0}) ---"
+            cat build-errors.txt
             tail -n 300 build.log
             exit "$build_status"
           fi
@@ -269,6 +292,7 @@ jobs:
           name: miatoll-build-failure-${{ github.run_number }}
           path: |
             build.log
+            build-errors.txt
             toolchain-info.txt
           if-no-files-found: ignore
           retention-days: 7
@@ -279,6 +303,12 @@ jobs:
         run: |
           {
             echo '## Build failure excerpt'
+            echo
+            echo '### Distinct errors'
+            echo '```'
+            cat build-errors.txt 2>/dev/null || echo '(build-errors.txt missing)'
+            echo '```'
+            echo '### First errors with context'
             echo '```'
             grep -n -B3 -A12 -m 30 'error:' build.log 2>/dev/null || tail -n 120 build.log 2>/dev/null || echo '(build.log missing)'
             echo '```'
