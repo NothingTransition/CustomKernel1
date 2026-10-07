@@ -6,6 +6,7 @@ on:
     branches:
       - arena/01a0bfbb-customkernel1
       - arena/01a1039d-customkernel1
+      - arena/39fe5f3e-customkernel1
     paths:
       - ".github/workflows/build-miatoll.yml"
       - "AnyKernel3/**"
