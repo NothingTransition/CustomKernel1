@@ -38,6 +38,12 @@ struct data_path {
 	struct list_head list;
 };
 
+struct apk_path_hash {
+	unsigned int hash;
+	bool exists;
+	struct list_head list;
+};
+
 struct my_dir_context {
 	struct dir_context ctx;
 	struct list_head *data_path_list;
@@ -65,13 +71,15 @@ struct my_dir_context {
 #endif
 
 extern bool is_manager_apk(char *path);
-FILLDIR_RETURN_TYPE my_actor(MY_ACTOR_CTX_ARG, const char *name, int namelen, loff_t off, u64 ino,
-							 unsigned int d_type)
+FILLDIR_RETURN_TYPE my_actor(MY_ACTOR_CTX_ARG, const char *name,
+			     int namelen, loff_t off, u64 ino,
+			     unsigned int d_type)
 {
 #if LINUX_VERSION_CODE < KERNEL_VERSION(3,19,0)
 	struct dir_context *ctx = (struct dir_context *)ctx_void;
 #endif
-	struct my_dir_context *my_ctx = container_of(ctx, struct my_dir_context, ctx);
+	struct my_dir_context *my_ctx =
+		container_of(ctx, struct my_dir_context, ctx);
 
 	// we put the apk path we collected here
 	char *candidate_path = (char *)my_ctx->private_data;
@@ -111,12 +119,12 @@ FILLDIR_RETURN_TYPE my_actor(MY_ACTOR_CTX_ARG, const char *name, int namelen, lo
 		strscpy(data->dirpath, dirpath, DATA_PATH_LEN);
 		data->depth = my_ctx->depth - 1;
 		list_add_tail(&data->list, my_ctx->data_path_list);
-
+		
 		return FILLDIR_ACTOR_CONTINUE;
 	}
 
 	// now put this on candidate_path
-	if (d_type == DT_REG && namelen == 8 && !memcmp(name, "base.apk", 8)) {
+	if (d_type == DT_REG && namelen == 8 && !memcmp_inline(name, "base.apk", 8)) {
 		snprintf(candidate_path, DATA_PATH_LEN, "%s/%.*s", my_ctx->parent_dir, namelen, name);
 	}
 
@@ -151,13 +159,13 @@ static noinline void search_manager(const char *path, int depth, struct list_hea
 	for (i = depth; i >= 0; i--) {
 		struct data_path *pos, *n;
 
-		list_for_each_entry_safe (pos, n, &data_path_list, list) {
+		list_for_each_entry_safe(pos, n, &data_path_list, list) {
 			struct my_dir_context ctx = { .ctx.actor = my_actor,
-							.data_path_list = &data_path_list,
-							.parent_dir = pos->dirpath,
-							.private_data = candidate_path,
-							.depth = pos->depth,
-							.stop = &stop };
+						      .data_path_list = &data_path_list,
+						      .parent_dir = pos->dirpath,
+						      .private_data = candidate_path,
+						      .depth = pos->depth,
+						      .stop = &stop };
 
 			// destroy buffer on every iteration
 			candidate_path[0] = 0;
@@ -165,7 +173,7 @@ static noinline void search_manager(const char *path, int depth, struct list_hea
 			if (stop)
 				goto skip_iterate;
 
-			struct file *file = ksu_filp_open_nonotify(pos->dirpath, O_RDONLY | O_NOFOLLOW | O_NOATIME | O_DIRECTORY);
+			struct file *file = file = ksu_filp_open_nonotify(pos->dirpath, O_RDONLY | O_NOFOLLOW | O_NOATIME | O_DIRECTORY);
 			if (IS_ERR(file)) {
 				pr_err("Failed to open directory: %s, err: %ld\n", pos->dirpath, PTR_ERR(file));
 				goto skip_iterate;
@@ -191,13 +199,11 @@ static noinline void search_manager(const char *path, int depth, struct list_hea
 			iterate_dir(file, &ctx.ctx);
 			filp_close(file, NULL);
 
-			/**
-			 * ^ oh so thats the issue!
-			 * we were calling is_manager_apk inside iterate_dir
-			 * now we defer file opens after iterate_dir
-			 * this way we dont open apks while inside that
-			 */
-			if (!candidate_path[0])
+			// ^ oh so thats the issue!
+			// we were calling is_manager_apk inside iterate_dir
+			// now we defer file opens after iterate_dir
+			// this way we dont open apks while inside that
+			if (!strstarts(candidate_path, "/data/ap") )
 				goto skip_iterate;
 
 			bool is_manager = is_manager_apk(candidate_path);
@@ -209,12 +215,13 @@ static noinline void search_manager(const char *path, int depth, struct list_hea
 			crown_manager(candidate_path, uid_data);
 			stop = 1;
 
-		skip_iterate:
+skip_iterate:
 			list_del(&pos->list);
 			if (pos != data)
 				kfree(pos);
 		}
 	}
+
 }
 
 static bool is_uid_exist(uid_t uid, char *package, void *data)
@@ -224,7 +231,8 @@ static bool is_uid_exist(uid_t uid, char *package, void *data)
 
 	bool exist = false;
 	list_for_each_entry (np, list, list) {
-		if (np->uid == uid % PER_USER_RANGE && strncmp(np->package, package, KSU_MAX_PACKAGE_NAME) == 0) {
+		if (np->uid == uid % PER_USER_RANGE &&
+		    strncmp(np->package, package, KSU_MAX_PACKAGE_NAME) == 0) {
 			exist = true;
 			break;
 		}
@@ -389,12 +397,12 @@ threaded:
 	kthread_run(throne_tracker_thread, (void *)prune_only, "kthread");
 }
 
-void __init ksu_throne_tracker_init()
+void ksu_throne_tracker_init()
 {
 	// nothing to do
 }
 
-void __exit ksu_throne_tracker_exit()
+void ksu_throne_tracker_exit()
 {
 	// nothing to do
 }

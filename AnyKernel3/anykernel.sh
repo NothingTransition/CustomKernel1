@@ -6,7 +6,7 @@
 ### AnyKernel setup
 # global properties
 properties() { '
-kernel.string=Stormbreaker KernelSU (backslashxx v3.3.0-62 + SUSFS v2.3.0 + NoMount v2.0.0)
+kernel.string=Stormbreaker KernelSU (KSU + SUSFS v2.3.0 + NoMount v2.0.0)
 kernel.compiler=Clang/LLVM 18 (LLVM=1, no GCC)
 kernel.made=NothingTransition CI
 kernel.version=4.14.357-openela

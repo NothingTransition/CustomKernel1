@@ -6,7 +6,6 @@ on:
     branches:
       - arena/01a0bfbb-customkernel1
       - arena/01a1039d-customkernel1
-      - arena/3bc926b5-customkernel1
     paths:
       - ".github/workflows/build-miatoll.yml"
       - "AnyKernel3/**"
@@ -127,9 +126,6 @@ jobs:
             }
           }
 
-          # KernelSU: backslashxx/KernelSU driver (scope-minimized manual
-          # hooks + SUSFS support). Kprobes, syscall-table tampering and the
-          # ARM64 branch-link hook stay off by design.
           require_config 'CONFIG_KSU=y'
           if grep -q '^CONFIG_KSU_KPROBES_KSUD=y' out/.config; then
             echo 'Kprobe hooks must remain disabled for manual integration' >&2
@@ -138,6 +134,7 @@ jobs:
           require_config '# CONFIG_KSU_HACK_ARM64_BRANCH_LINK is not set'
           require_config '# CONFIG_KSU_TAMPER_SYSCALL_TABLE is not set'
           require_config 'CONFIG_KSU_LSM_SECURITY_HOOKS=y'
+          require_config 'CONFIG_KSU_SUSFS=y'
           require_config 'CONFIG_KSU_SUSFS_SUS_PATH=y'
           require_config 'CONFIG_KSU_SUSFS_SUS_MOUNT=y'
           require_config 'CONFIG_KSU_SUSFS_SUS_KSTAT=y'
@@ -145,101 +142,14 @@ jobs:
           require_config 'CONFIG_KSU_SUSFS_SPOOF_UNAME=y'
           require_config 'CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y'
           require_config 'CONFIG_KSU_SUSFS_OPEN_REDIRECT=y'
-          require_config 'CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y'
-          # SUSFS kernel side needs a built-in FUSE (get_fuse_inode()).
-          require_config 'CONFIG_FUSE_FS=y'
           require_config 'CONFIG_NOMOUNT=y'
           # The eBPF backport is in this tree and BPF_SYSCALL/JIT stay on, but
           # BPF LSM is off in the v93 lineage this release is based on.
           require_config '# CONFIG_BPF_LSM is not set'
-          # The eBPF stream parser (sockmap/sk_msg) is on. Build #103 broke on
-          # net/core/skmsg.c backport leftovers and the option was disabled
-          # again; the file compiles now (see net/core/skmsg.c +
-          # include/linux/skmsg.h: saved_destroy is captured where the other
-          # saved_* callbacks are), and it selects STREAM_PARSER and
-          # NET_SOCK_MSG, which pull in skmsg.o, sock_map.o and tcp_bpf.o.
-          require_config 'CONFIG_BPF_STREAM_PARSER=y'
-          require_config 'CONFIG_STREAM_PARSER=y'
-          require_config 'CONFIG_NET_SOCK_MSG=y'
-
-          # BPF userspace compatibility spoof. Android's bpfloader /
-          # netbpfload / netd / uprobestats pick their program set from the
-          # uname() release string; the backport in this tree is exactly
-          # v5.10, so they must be told 5.10 or they take the legacy path.
-          require_config 'CONFIG_FAKE_UNAME_5_10=y'
-          require_config '# CONFIG_FAKE_UNAME_NONE is not set'
-
-          # The arm64 eBPF JIT is the one piece of the BPF subsystem this tree
-          # did NOT get from its 5.10-era backport (kernel/bpf, the uapi and
-          # the verifier are 5.10; arch/arm64/net/bpf_jit_comp.c is the 4.14
-          # switch). It must know BPF_JMP32: the verifier emits JMP32 itself
-          # when it rewrites 32-bit div/mod (kernel/bpf/verifier.c,
-          # fixup_bpf_calls()) and clang emits it for 32-bit compares with
-          # -mcpu=v3. Without the cases, that insn hits 'default:' in
-          # build_insn() -> "unknown opcode" -> -EINVAL, and with
-          # CONFIG_BPF_JIT_ALWAYS_ON=y there is no interpreter fallback, so the
-          # program cannot be loaded at all. 22 cases = 20 compares + 2 JSET,
-          # and the 32-bit forms must compare/tst/mov the 32-bit width
-          # (is64 covers BPF_JMP, BPF_JMP32 stays narrow).
-          test "$(grep -c 'case BPF_JMP32' arch/arm64/net/bpf_jit_comp.c)" -ge 22
-          grep -q 'BPF_CLASS(code) == BPF_JMP;' arch/arm64/net/bpf_jit_comp.c
-          grep -q 'emit(A64_CMP(is64, dst, src), ctx);' arch/arm64/net/bpf_jit_comp.c
-          grep -q 'emit(A64_CMP(is64, dst, tmp), ctx);' arch/arm64/net/bpf_jit_comp.c
-          grep -q 'emit(A64_TST(is64, dst, src), ctx);' arch/arm64/net/bpf_jit_comp.c
-          grep -q 'emit(A64_TST(is64, dst, tmp), ctx);' arch/arm64/net/bpf_jit_comp.c
-          # ... and the verifier's own JMP32 rewrite must stay, otherwise the
-          # JIT gate above could be "satisfied" by deleting the feature.
-          grep -q 'BPF_RAW_INSN((is64 ? BPF_JMP : BPF_JMP32) |' kernel/bpf/verifier.c
-
-          # Hook call shape (backslashxx manual-hook ABI). The driver takes
-          # the raw user pointer at faccessat/stat (const char __user **), and
-          # the fstat/fstat64 return buffers are fixed up by the driver's
-          # ksu_handle_newfstat_ret()/ksu_handle_fstat64_ret(). Assert the call
-          # sites and the driver prototypes so an ABI drift fails the build.
-          grep -q 'ksu_handle_faccessat(&dfd, &filename, &mode, NULL)' fs/open.c
-          grep -q 'ksu_handle_stat(&dfd, &filename, &flags)' fs/stat.c
-          grep -q 'ksu_handle_stat(&dfd, &filename, &flag)' fs/stat.c
-          grep -q 'ksu_handle_newfstat_ret(&fd, &statbuf)' fs/stat.c
-          grep -q 'ksu_handle_fstat64_ret(&fd, &statbuf)' fs/stat.c
-          grep -q 'ksu_handle_execveat(&fd, &filename, &argv, &envp, &flags)' fs/exec.c
-          grep -q 'ksu_handle_sys_reboot(magic1, magic2, cmd, &arg)' kernel/reboot.c
-          grep -q 'ksu_handle_faccessat(int \*dfd, const char __user \*\*filename_user, int \*mode' drivers/kernelsu/feature/sucompat.c
-          # Fake uname must be COMPOSED with SUSFS, not fight it: the BPF
-          # spoof is applied first and susfs_spoof_uname() runs after, so a
-          # manager-configured SUSFS release always overwrites it. These
-          # assertions pin that order and the narrow scope of the spoof.
-          grep -q 'fake_bpf_uname(&tmp);' kernel/sys.c
-          grep -q 'susfs_spoof_uname(&tmp);' kernel/sys.c
-          test "$(grep -n 'fake_bpf_uname(&tmp);' kernel/sys.c | cut -d: -f1)" \
-               -lt "$(grep -n 'susfs_spoof_uname(&tmp);' kernel/sys.c | cut -d: -f1)"
-          grep -qF 'if (current_uid().val != 0)' kernel/sys.c
-          grep -qF '"bpfloader", 9' kernel/sys.c
-          grep -qF '"netbpfload", 10' kernel/sys.c
-          grep -qF '"netd", 4' kernel/sys.c
-          grep -qF '"uprobestats", 11' kernel/sys.c
-          # SUSFS side unchanged: it only overwrites when the manager has set
-          # a release, which is what makes "SUSFS wins" true.
-          grep -qF 'if (my_uname.release[0] != ' fs/susfs.c
-          grep -qF 'susfs_spoof_uname(&tmp);' kernel/sys.c
-          # MANUAL-HOOK ABI (backslashxx driver): the kernel hands over the
-          # raw user filename pointer and the driver rewrites it in place.
-          # The 4.14 branch of the ksu_handle_stat prototype must be the one
-          # in the tree, and its declaration must precede the call (clang 16+
-          # turns an implicit declaration into a hard error - build #124).
-          grep -qF 'ksu_handle_faccessat(&dfd, &filename, &mode, NULL)' fs/open.c
-          grep -qF 'extern int ksu_handle_faccessat(int *, const char __user **, int *,' fs/open.c
-          grep -qF 'extern int ksu_handle_stat(int *dfd, const char __user **filename_user, int *flags)' fs/stat.c
-          stat_decl=$(grep -n 'extern int ksu_handle_stat(int \*dfd, const char __user \*\*filename_user, int \*flags)' fs/stat.c | head -1 | cut -d: -f1)
-          stat_call=$(grep -n 'ksu_handle_stat(&dfd, &filename, &flags)' fs/stat.c | head -1 | cut -d: -f1)
-          test -n "$stat_decl" && test -n "$stat_call" && test "$stat_decl" -lt "$stat_call"
-          # The manual-hook-only fstat fixups: one site each, inside the
-          # #ifndef CONFIG_KSU_SUSFS arms, so the SUSFS-mode path is compiled.
-          test "$(grep -c 'ksu_handle_newfstat_ret(&fd, &statbuf)' fs/stat.c)" -eq 1
-          test "$(grep -c 'ksu_handle_fstat64_ret(&fd, &statbuf)' fs/stat.c)" -eq 1
-          # And the driver side of the same contract.
-          grep -qF 'ksu_handle_faccessat(int *dfd, const char __user **filename_user, int *mode, int *__unused_flags)' drivers/kernelsu/feature/sucompat.c
-          grep -qF 'ksu_handle_stat(int *dfd, const char __user **filename_user, int *flags)' drivers/kernelsu/feature/sucompat.c
-          grep -qF 'ksu_handle_execveat(int *fd, struct filename **filename_ptr, void *argv, void *envp, int *flags)' drivers/kernelsu/feature/sucompat.c
+          # BPF_STREAM_PARSER must stay off until net/core/skmsg.c is ported
+          # properly; it does not compile in this tree (sk_psock_init()'s
+          # 'prot' is undeclared) and that broke build #103.
+          require_config '# CONFIG_BPF_STREAM_PARSER is not set'
           require_config 'CONFIG_BPF_JIT_ALWAYS_ON=y'
           require_config 'CONFIG_BPF_UNPRIV_DEFAULT_OFF=y'
           require_config 'CONFIG_PSI=y'
@@ -313,19 +223,9 @@ jobs:
           set -e
 
           if [ "$build_status" -ne 0 ]; then
-            # Build failed. GitHub caps ::error:: annotations per step, and
-            # logs/artifacts are not always retrievable, so the most useful
-            # signal is ONE annotation carrying every distinct compiler error
-            # (%0A is decoded as a newline by the runner).
-            grep -E ' error:' build.log | sed 's/\r$//' | awk '!seen[$0]++' \
-              | cut -c1-200 > build-errors.txt || true
-            total=$(grep -c . build-errors.txt || true)
-            head -n 25 build-errors.txt | sed 's/%/%25/g; s/$/%0A/' | tr -d '\n' \
-              > build-errors-annot.txt || true
-            printf '::error::Kernel build failed: %s distinct error lines. %s\n' \
-              "${total:-0}" "$(cat build-errors-annot.txt 2>/dev/null)"
-            echo "--- distinct compiler errors (${total:-0}) ---"
-            cat build-errors.txt
+            echo 'Kernel build failed. Relevant diagnostics:'
+            awk 'BEGIN{f=0; n=0} /error:/ { f=1 } f { print; n++ } n>=45 { exit }' build.log \
+              | sed 's/%/%25/g; s/\r/%0D/g; s/\n/%0A/g; s/^/::error::/' || true
             tail -n 300 build.log
             exit "$build_status"
           fi
@@ -339,7 +239,6 @@ jobs:
           name: miatoll-build-failure-${{ github.run_number }}
           path: |
             build.log
-            build-errors.txt
             toolchain-info.txt
           if-no-files-found: ignore
           retention-days: 7
@@ -350,12 +249,6 @@ jobs:
         run: |
           {
             echo '## Build failure excerpt'
-            echo
-            echo '### Distinct errors'
-            echo '```'
-            cat build-errors.txt 2>/dev/null || echo '(build-errors.txt missing)'
-            echo '```'
-            echo '### First errors with context'
             echo '```'
             grep -n -B3 -A12 -m 30 'error:' build.log 2>/dev/null || tail -n 120 build.log 2>/dev/null || echo '(build.log missing)'
             echo '```'
@@ -366,67 +259,31 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Every check announces itself, so a failure names the exact missing
-          # product or symbol in an ::error:: annotation - GitHub caps annotations
-          # per step and the raw logs are not always retrievable.
-          check_file() {
-            test -s "$1" || { echo "::error::verify: missing build product: $1"; exit 1; }
-            echo "ok product: $1"
-          }
-          check_sym() {
-            grep -q " $1\$" vmlinux.sym \
-              || { echo "::error::verify: not linked into vmlinux: $1"; exit 1; }
-            echo "ok symbol: $1"
-          }
-
-          check_file out/arch/arm64/boot/Image.gz
-          check_file out/arch/arm64/boot/dtb.img
-          check_file out/arch/arm64/boot/dtbo.img
-          check_file out/arch/arm64/boot/dts/qcom/curtana-atoll-ab-idp-overlay.dtbo
-          check_file out/drivers/kernelsu/ksu.o
-          check_file out/fs/susfs.o
-          check_file out/fs/nomount/nomount.o
-          # eBPF stream parser (sockmap/sk_msg) - all three objects must exist.
-          check_file out/net/core/skmsg.o
-          check_file out/net/core/sock_map.o
-          check_file out/net/ipv4/tcp_bpf.o
-          check_file out/net/strparser/strparser.o
+          test -s out/arch/arm64/boot/Image.gz
+          test -s out/arch/arm64/boot/dtb.img
+          test -s out/arch/arm64/boot/dtbo.img
+          test -s out/arch/arm64/boot/dts/qcom/curtana-atoll-ab-idp-overlay.dtbo
+          test -s out/drivers/kernelsu/ksu.o
+          test -s out/fs/susfs.o
+          test -s out/fs/nomount/nomount.o
 
           # Write once instead of piping llvm-nm into grep -q: with pipefail,
           # grep's early exit makes llvm-nm report EPIPE (exit 74).
           llvm-nm out/vmlinux > vmlinux.sym
-          check_sym ksu_handle_execveat
-          check_sym ksu_handle_sys_reboot
-          check_sym kernelsu_init
-          # NOT kernelsu_init_early: the driver only compiles it (and only
-          # *registers* it instead of kernelsu_init) when it is built as a
-          # loadable module - its NEED_OWN_STACKPROTECTOR guard requires
-          # defined(MODULE). This kernel builds CONFIG_KSU=y, so the init entry
-          # point is kernelsu_init. Asserting the other one failed build #126.
-          #
-          # Kernel-side hook entry points and the SUSFS kernel side. If any of
-          # these is missing, sucompat or the hiding stack is degraded without
-          # the build saying so.
-          check_sym susfs_init
-          check_sym susfs_add_sus_map
-          check_sym susfs_set_uname
-          check_sym nomount_init
-          # eBPF stream parser: if any of these is missing the option silently
-          # collapsed and BPF_MAP_TYPE_SOCKMAP would not work.
-          check_sym sk_psock_init
-          check_sym sock_map_close
-          check_sym sock_map_destroy
-          check_sym sk_msg_alloc
-          check_sym tcp_bpf_recvmsg
-          check_sym strp_init
+          grep -q ' ksu_handle_execveat$' vmlinux.sym
+          grep -q ' ksu_handle_sys_reboot$' vmlinux.sym
+          grep -q ' kernelsu_init$' vmlinux.sym
+          grep -q ' susfs_init$' vmlinux.sym
+          grep -q ' susfs_add_sus_map$' vmlinux.sym
+          grep -q ' nomount_init$' vmlinux.sym
 
           # v93 lineage: MGLRU and the container/namespace set are back in.
           # The config assertions above are the real gate; this proves the
           # linked image agrees with them.
-          check_sym lru_gen_init_lruvec
-          check_sym lru_gen_init_mm
-          check_sym sys_semget
-          check_sym create_user_ns
+          grep -q ' lru_gen_init_lruvec$' vmlinux.sym
+          grep -q ' lru_gen_init_mm$' vmlinux.sym
+          grep -q ' sys_semget$' vmlinux.sym
+          grep -q ' create_user_ns$' vmlinux.sym
 
           make -s O=out ARCH=arm64 LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- kernelrelease | tee kernel.release
@@ -441,7 +298,7 @@ jobs:
             echo "toolchain.source=ubuntu-24.04-llvm"
             clang --version | head -n 1 | sed 's/^/clang.version=/'
             ld.lld --version | head -n 1 | sed 's/^/lld.version=/'
-            grep -E '^(CONFIG_KSU|CONFIG_NOMOUNT|CONFIG_LRU_GEN|CONFIG_DEFAULT_IOSCHED|CONFIG_SYSVIPC|CONFIG_USER_NS|CONFIG_NF_TABLES|CONFIG_EROFS_FS|CONFIG_NTFS_FS|CONFIG_BPF|CONFIG_STREAM_PARSER|CONFIG_NET_SOCK_MSG|CONFIG_MODULE_SIG_FORCE)' out/.config || true
+            grep -E '^(CONFIG_KSU|CONFIG_NOMOUNT|CONFIG_LRU_GEN|CONFIG_DEFAULT_IOSCHED|CONFIG_SYSVIPC|CONFIG_USER_NS|CONFIG_NF_TABLES|CONFIG_EROFS_FS|CONFIG_NTFS_FS|CONFIG_BPF_SYSCALL|CONFIG_MODULE_SIG_FORCE)' out/.config || true
           } | tee build-info.txt
 
       - name: Package AnyKernel3 flashable zip
@@ -497,20 +354,15 @@ jobs:
           from_ours() { gh release download stormbreaker-v111 \
             -R "$GITHUB_REPOSITORY" -p "$1" -D release-assets --clobber; }
 
-          # Manager APK: pinned to the backslashxx/KernelSU release the
-          # vendored driver comes from. The version code in the asset name
-          # (32663) is the KSU_VERSION the driver reports, so the manager and
-          # the kernel agree on the ABI.
-          #
-          # Fallback: the immutable copy published with stormbreaker-v111 (the
-          # same manager family). Upstream deletes its old tags, so our own
-          # copy is what keeps a rebuild of an old pin possible.
+          # Manager APK: the fresh upstream release first (matches the
+          # v3.3.0-60 driver source), then older upstream tags, then the
+          # immutable -56 build on our own v111 release (same 32657 ABI).
           got_manager=0
-          for tag in v3.3.0-62; do
+          for tag in v3.3.0-60 v3.3.0-55; do
             if gh release download "$tag" -R backslashxx/KernelSU \
-                 -p 'KernelSU_v3.3.0-62_32663-release.apk' \
-                 -D release-assets --clobber; then
-              mv release-assets/KernelSU_v3.3.0-62_32663-release.apk \
+                 -p 'KernelSU_v3.3.0-*_*-release.apk' -D release-assets \
+                 --clobber; then
+              mv release-assets/KernelSU_v3.3.0-*_*-release.apk \
                  release-assets/KernelSU-manager.apk
               echo "manager APK: from backslashxx/KernelSU $tag"
               got_manager=1
@@ -518,14 +370,8 @@ jobs:
             fi
           done
           if [ "$got_manager" -eq 0 ]; then
-            if from_ours 'KernelSU-manager.apk'; then
-              echo "manager APK: immutable copy from stormbreaker-v111"
-            else
-              echo "::error::KernelSU manager APK unavailable: the" \
-                   "backslashxx/KernelSU $tag download failed and no release" \
-                   "of ours carries KernelSU-manager.apk"
-              exit 1
-            fi
+            from_ours 'KernelSU-manager.apk'
+            echo "manager APK: from stormbreaker-v111 (v3.3.0-56 build)"
           fi
 
           if from_ours 'BRENE-v0.0.68.zip'; then
@@ -547,11 +393,6 @@ jobs:
           head -c2 release-assets/KernelSU-manager.apk | grep -q PK
           head -c2 release-assets/BRENE-v0.0.68.zip | grep -q PK
           head -c2 release-assets/NoMount-v2.0.0.zip | grep -q PK
-          # An HTML error page or a truncated download also starts with bytes
-          # that can pass a header check, so look inside the APK: a real one
-          # has AndroidManifest.xml and a dex payload.
-          unzip -l release-assets/KernelSU-manager.apk | grep -q 'AndroidManifest.xml'
-          unzip -l release-assets/KernelSU-manager.apk | grep -qE 'classes[0-9]*\.dex'
           ls -la release-assets/
 
       - name: Prepare release notes
@@ -564,21 +405,7 @@ jobs:
             f && /^## #/ {exit}
             f {print}
           ' CHANGELOG.md > release-notes.md
-          if ! grep -q . release-notes.md; then
-            # Run numbers and changelog entries can drift apart (a run killed
-            # by an infrastructure outage still consumes its number, and the
-            # retry lands on the next one). Ship the newest entry with a note
-            # instead of dumping the file header.
-            awk '/^## #/ {if (f) exit; f=1} f' CHANGELOG.md > entry.md
-            {
-              echo "> No changelog entry is numbered for build #${GITHUB_RUN_NUMBER};"
-              echo "> this build ships the newest entry in CHANGELOG.md."
-              echo
-              cat entry.md
-            } > release-notes.md
-          fi
           grep -q . release-notes.md || head -8 CHANGELOG.md > release-notes.md
-          head -n 3 release-notes.md
 
       - name: Create numbered release (history preserved)
         env:

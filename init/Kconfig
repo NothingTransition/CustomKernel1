@@ -2101,51 +2101,6 @@ config ASN1
 	  inform it as to what tags are to be expected in a stream and what
 	  functions to call on what tags.
 
-choice
-	prompt "Fake uname kernel version"
-	default FAKE_UNAME_NONE
-	help
-	  Report a newer kernel release to Android's BPF userspace - bpfloader,
-	  netbpfload, netd and uprobestats, root only.  The BPF subsystem of
-	  this kernel is a v5.10-era backport, but the real release string says
-	  4.14, which makes that userspace take the legacy code path and skip
-	  program sets and map types this kernel can serve.  The spoof is
-	  limited to those four process names, so no other process (and no
-	  unprivileged caller) sees a different release.
-
-	  A manager-configured SUSFS uname spoof (CONFIG_KSU_SUSFS_SPOOF_UNAME)
-	  always takes precedence: the fake is applied first and SUSFS
-	  overwrites it whenever the manager has set a release, so there is
-	  never a fight over the value.
-
-	  Choose the version whose BPF feature set this kernel actually
-	  implements (the backport here matches v5.10), or None to disable.
-
-config FAKE_UNAME_NONE
-	bool "None"
-	help
-	  Don't spoof uname version.
-
-config FAKE_UNAME_5_4
-	bool "5.4"
-
-config FAKE_UNAME_5_10
-	bool "5.10"
-
-config FAKE_UNAME_5_15
-	bool "5.15"
-
-config FAKE_UNAME_6_1
-	bool "6.1"
-
-config FAKE_UNAME_6_6
-	bool "6.6"
-
-config FAKE_UNAME_6_12
-	bool "6.12"
-
-endchoice
-
 source "kernel/Kconfig.locks"
 
 source "init/Kconfig.gki"

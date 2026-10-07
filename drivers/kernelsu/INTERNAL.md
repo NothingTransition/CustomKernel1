@@ -78,7 +78,7 @@
 - theres a lot of these on the codebase even for mundane tasks
 
 ## 'We need to see the compiler as an enemy' section.
-- constexpr is broken on clang < 19 even on -std=gnu23. IR generation fails.
+- constexpr is broken on clang < 17 even on -std=gnu23. IR generation fails.
 - gcc 4.9 has issues on casted designated init. [related](https://github.com/torvalds/linux/commit/e8c07082a810fbb9db303a2b66b66b8d7e588b53)
 - some have autistic inlining which will oom compilation for \__attribute\_\_((flatten)) (e.g. sultan). avoid.
 - some kernel+compiler combo reads \__attribute\_\_((cold, noinline)) as __init, which evicts our fn. avoid.

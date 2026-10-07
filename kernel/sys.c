@@ -1186,65 +1186,12 @@ static int override_release(char __user *release, size_t len)
 extern void susfs_spoof_uname(struct new_utsname *tmp);
 #endif
 
-#ifndef CONFIG_FAKE_UNAME_NONE
-/*
- * BPF userspace compatibility spoof.
- *
- * Android's BPF userspace (bpfloader / netbpfload / netd / uprobestats, all
- * running as root) decides which program set and which BPF feature level to
- * use from the uname() release string. The BPF subsystem in this tree is a
- * v5.10 backport, but the real release string starts with 4.14, so that
- * userspace takes the legacy path and skips program sets this kernel can
- * actually serve. Reporting the version whose feature set we implement makes
- * it use them.
- *
- * Scope is deliberately narrow: only those four process names, only as root.
- * Every other process - including unprivileged callers - still sees the real
- * release, so nothing else changes its behaviour.
- *
- * Ordering matters and is load bearing: this runs *before*
- * susfs_spoof_uname(), which is the manager-controlled SUSFS uname spoof.
- * SUSFS therefore always has the last word: if the manager configured a
- * release (or explicitly "default"), that value wins and this helper
- * has no visible effect.
- */
-static void fake_bpf_uname(struct new_utsname *tmp)
-{
-	if (current_uid().val != 0)
-		return;
-	if (strncmp(current->comm, "bpfloader", 9) &&
-	    strncmp(current->comm, "netbpfload", 10) &&
-	    strncmp(current->comm, "netd", 4) &&
-	    strncmp(current->comm, "uprobestats", 11))
-		return;
-
-#if defined(CONFIG_FAKE_UNAME_5_4)
-	strlcpy(tmp->release, "5.4.200", sizeof(tmp->release));
-#elif defined(CONFIG_FAKE_UNAME_5_10)
-	strlcpy(tmp->release, "5.10.239", sizeof(tmp->release));
-#elif defined(CONFIG_FAKE_UNAME_5_15)
-	strlcpy(tmp->release, "5.15.200", sizeof(tmp->release));
-#elif defined(CONFIG_FAKE_UNAME_6_1)
-	strlcpy(tmp->release, "6.1.200", sizeof(tmp->release));
-#elif defined(CONFIG_FAKE_UNAME_6_6)
-	strlcpy(tmp->release, "6.6.200", sizeof(tmp->release));
-#elif defined(CONFIG_FAKE_UNAME_6_12)
-	strlcpy(tmp->release, "6.12.200", sizeof(tmp->release));
-#endif
-	pr_debug("fake uname: %s/%d release=%s\n",
-		 current->comm, current->pid, tmp->release);
-}
-#endif /* !CONFIG_FAKE_UNAME_NONE */
-
 SYSCALL_DEFINE1(newuname, struct new_utsname __user *, name)
 {
 	struct new_utsname tmp;
 
 	down_read(&uts_sem);
 	memcpy(&tmp, utsname(), sizeof(tmp));
-#ifndef CONFIG_FAKE_UNAME_NONE
-	fake_bpf_uname(&tmp);
-#endif
 #ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
 	susfs_spoof_uname(&tmp);
 #endif

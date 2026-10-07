@@ -3,8 +3,8 @@
 This directory vendors the kernel component from:
 
 - Repository: https://github.com/backslashxx/KernelSU
-- Tag: `v3.3.0-62` (upstream kernel Makefile: 32663)
-- Tag object: `28ac0a274a860bf580573df2c74821af2b9f8581`
+- Tag: `v3.3.0-60` (upstream kernel Makefile: 32657 - ABI unchanged)
+- Commit: `436b7102bb5d6a6c7e6d6b1a3d3f8de0e2cbd6f6`
 - Manager policy (Stormbreaker, by maintainer decision 2026-10-05): **only the
   backslashxx/KernelSU manager family is trusted.** The tree accepts the
   release managers (public dummy.keystore cert `0x363/4359c171…`, package
@@ -18,30 +18,6 @@ This directory vendors the kernel component from:
 
 ## Sync history
 
-- 2026-10-06: manual sync `v3.3.0-60` -> `v3.3.0-62` (KSU_VERSION 32657 ->
-  32663). The tag was diffed file-by-file against this vendor: 72 of 83 files
-  were already byte-identical, so the sync is small - taken upstream:
-  `Makefile` (version + upstream kernel-change marker `26c45e2`),
-  `INTERNAL.md` (clang < 19 note), `manager/throne_tracker.c` (deferred
-  file opens after `iterate_dir`, `memcmp` instead of the local
-  `memcmp_inline`, unused `apk_path_hash` struct dropped - no
-  KSUN/two-manager logic, so the single-manager policy is unaffected).
-  Everything else that differs from the tag is local and deliberate: the
-  SUSFS-carrying files (`Kconfig`, `ksu.c`, `hook/setuid_hook.c`,
-  `selinux/selinux.c`, `supercall/supercall.c`, `supercall/dispatch.c` -
-  the latter keeps our atomic `EVENT_POST_FS_DATA` one-shot) and the
-  manager-policy trim in `manager/apk_sign.c` (KOWX712 cert not accepted).
-  Manager APK pin moved to the v3.3.0-62 build
-  (`KernelSU_v3.3.0-62_32663-release.apk`); the immutable copy published
-  with `stormbreaker-v111` remains the fallback.
-- 2026-10-06: **BakaSU v4.2.0-rc3 was tried and reverted.** The driver was
-  replaced for one release line (`db02418e6`..`039f4d629`) with BakaSU's
-  SUSFS inline-hook mode. Reverted on maintainer decision: BakaSU exposes
-  more than this build wants (manager/driver surface), and the inline-hook
-  mode needs seven kernel hook sites where the scope-minimized backslashxx
-  manual hooks need five. The audit that came out of that experiment is in
-  `BPF-AUDIT.md`; the SUSFS v2.3.0 kernel side, NoMount and the eBPF work
-  (stream parser, `BPF_JMP32`, fake uname) are unaffected and stay.
 - 2026-10-05: manual sync `v3.3.0-56` -> `v3.3.0-60` on the v93 lineage
   (KSU_VERSION stays 32657 - upstream did not bump the kernel ABI; release
   -56 was deleted upstream, so the old pin no longer resolves). Taken

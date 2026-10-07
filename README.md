@@ -16,9 +16,9 @@ One zip for all four — it ships its own DTB and DTBO.
 ## Features
 
 ### Root & hiding
-- **KernelSU** built in — driver vendored from backslashxx/KernelSU `v3.3.0-62` (`KSU_VERSION 32663`); no kprobes, no daemon, no `/su` binary
+- **KernelSU** built in — driver vendored from backslashxx/KernelSU `v3.3.0-60` (`KSU_VERSION 32657`, ABI unchanged); no kprobes, no daemon, no `/su` binary
 - **Only the backslashxx/KernelSU manager family is accepted**: release managers signed with the public dummy.keystore (package-locked to `me.weishu.kernelsu`) and self-built managers carrying the official KernelSU certificate. Fork managers (KernelSU-Next, KOWX712, …) are deliberately rejected
-- Manager APK attached to every release: **KernelSU `v3.3.0-62`** (upstream build, shipped as `KernelSU-manager.apk`); the immutable copy on our `v111` release is the fallback
+- Manager APK attached to every release: **KernelSU `v3.3.0-60`** (upstream build; our immutable -56 copy is the fallback)
 - **SUSFS v2.3.0** — sus_path, sus_mount, sus_kstat, sus_map, spoof uname / cmdline+bootconfig, open_redirect, AVC log spoofing, KSU/SUSFS symbol hiding
 - **NoMount v2.0.0** — per-app directory hiding via keyring rules
 - **BRENE v0.0.68** module bundled — SUSFS rules control panel
@@ -44,7 +44,7 @@ One zip for all four — it ships its own DTB and DTBO.
 - TCP sysctls are stock (the #105 `net_tune` defaults are not in this build); WiFi guidance (the ROM's `WCNSS_qcom_cfg.ini`) in RELEASE_NOTES
 
 ### Android
-- **Android 13–17** — A17 tested on Evolution X; full ACK eBPF backport (ring buffer, in-kernel BTF, iterators, trampolines) **plus the stream parser** — sockmap/sk_msg builds and is on (`BPF_MAP_TYPE_SOCKMAP` works); BPF LSM is off in this lineage. See RELEASE_NOTES for the A16/A17 compatibility audit
+- **Android 13–17** — A17 tested on Evolution X; full ACK eBPF backport (ring buffer, in-kernel BTF, iterators, trampolines). BPF LSM is off in this lineage, and sockmap/sk_msg stays off because that part of the backport does not compile here — see RELEASE_NOTES for the A16/A17 compatibility audit
 - Binder (`binder,hwbinder,vndbinder`), SELinux (enforcing, `checkreqprot=0`), seccomp filter, KASLR, STRICT_KERNEL_RWX, INIT_ON_ALLOC, hardened usercopy
 - **LZ4 ramdisk**, boot header v2, **A-only** device — one zip for curtana / excalibur / gram / joyeuse (own DTB + DTBO)
 
@@ -63,7 +63,7 @@ Flash the release zip in recovery, reboot, install the manager APK. Done.
 The **#96–#110 lineage is withdrawn** (RAM-tier tuning, CFQ default, MGLRU and
 Droidspaces compiled out, GKI-style `fq_codel` default). Those releases
 (`v105`, `v108`, `v109`, `v110`) were deleted; the current build returns to the
-v93 base and moves forward from there with the backslashxx driver.
+v93 base and moves forward from there with the updated backslashxx driver.
 
 Boot status on **Infinity X 4.0 (A17)**: that ROM currently only boots the
 Imperial-X kernel reliably, so no Stormbreaker build is guaranteed there; the
@@ -80,7 +80,7 @@ Builds run in GitHub Actions on Ubuntu 24.04 with the distro LLVM toolchain — 
 - **Diagnostics:** experimental bisect kernels live in `diag/` and build on manual dispatch only — see `diag/README.md`.
 - **Restore:** `.github/workflows/restore-release.yml` re-attaches a pruned release's original zip from the CI artifact of the run that built it (used once to bring back `v93`); it never rebuilds.
 
-CI enforces: no duplicate defconfig symbols, the required config set must be present in the *resolved* `.config` (including the eBPF stream parser, whose objects and symbols are also checked in the linked image), the v93-lineage features (MGLRU, the container/namespace set, BFQ default) must be in it, and the options that must stay off (kprobes) stay off.
+CI enforces: no duplicate defconfig symbols, the required config set must be present in the *resolved* `.config`, the v93-lineage features (MGLRU, the container/namespace set, BFQ default) must be in it, and the options that must stay off (kprobes, the BPF stream parser) stay off.
 
 ## Credits
 

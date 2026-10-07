@@ -1218,21 +1218,7 @@ CONFIG_CGROUP_NET_PRIO=y
 CONFIG_NET_RX_BUSY_POLL=y
 CONFIG_BQL=y
 CONFIG_BPF_JIT=y
-# The BPF stream parser (sockmap/sk_msg) is on. Build #103 failed here
-# because net/core/skmsg.c carried an uncompilable stray line from the
-# 5.x backport (undeclared 'prot' in sk_psock_init); the callback it was
-# meant to save (saved_destroy) is now captured in sk_psock_update_proto()
-# and the whole file compiles. Enabling this selects STREAM_PARSER and
-# NET_SOCK_MSG, so skmsg.o, sock_map.o and tcp_bpf.o are built in.
-CONFIG_BPF_STREAM_PARSER=y
-# BPF userspace compatibility: report the release whose BPF feature set this
-# kernel actually implements. The core/verifier backport in this tree is
-# exactly v5.10 (29 map types / 31 program types / 156 helpers), while the
-# real release string says 4.14, which makes Android's BPF userspace pick the
-# legacy program set. Only the root BPF consumer processes (bpfloader,
-# netbpfload, netd, uprobestats) see this; a manager-configured SUSFS uname
-# spoof always wins over it. See init/Kconfig, "Fake uname kernel version".
-CONFIG_FAKE_UNAME_5_10=y
+# CONFIG_BPF_STREAM_PARSER is not set
 CONFIG_NET_FLOW_LIMIT=y
 CONFIG_SOCKEV_NLMCAST=y
 
@@ -1305,6 +1291,7 @@ CONFIG_NFC_NQ=y
 # CONFIG_LWTUNNEL is not set
 CONFIG_DST_CACHE=y
 CONFIG_GRO_CELLS=y
+# CONFIG_NET_SOCK_MSG is not set
 # CONFIG_NET_DEVLINK is not set
 CONFIG_MAY_USE_DEVLINK=y
 CONFIG_HAVE_EBPF_JIT=y
@@ -5221,9 +5208,6 @@ CONFIG_ESOC_MDM_DBG_ENG=y
 
 #
 # KernelSU
-#
-#
-# KernelSU — BakaSU driver v4.2.0-rc3 (see drivers/kernelsu/UPSTREAM.md)
 #
 CONFIG_KSU=y
 # CONFIG_KSU_HACK_ARM64_BRANCH_LINK is not set
